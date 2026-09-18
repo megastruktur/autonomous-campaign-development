@@ -1,8 +1,9 @@
 # Autonomous Campaign Development (Agent Skill)
 
 Reusable orchestration instructions for running autonomous, multi-task development
-campaigns: an OMP coordinator plans, dispatches OMP coding agents into Orca-managed
-worktrees, integrates, and verifies — without writing source code itself. Designed for the
+campaigns: an orchestrator (the coordinator) plans, dispatches OMP coding agents into
+Orca-managed worktrees, integrates, and verifies — without writing source code itself.
+Designed for the
 [Hermes](https://hermes-agent.nousresearch.com/docs/user-guide/features/skills/) planner
 profile; portable to other orchestrating agents with adapter changes.
 
@@ -22,7 +23,8 @@ Version 1.0.0 · MIT License.
   On a Linux host the local CLI is `orca-ide`; resolve the Orca executable per
   platform/runtime (inside Orca terminals: `orca`; dev checkouts: `orca-dev`; WSL exports
   `ORCA_CLI_COMMAND`).
-- [OMP](https://github.com/stablyai/orca) — the harness driving the coding agents.
+- [OMP (Oh My Pi)](https://github.com/can1357/oh-my-pi) — the harness driving the coding
+  agents; see its [skills documentation](https://github.com/can1357/oh-my-pi/blob/main/docs/skills.md).
 - Node.js/npm — only for the installer CLI below.
 - Git.
 - Model access for the coding model, fallback model, and independent reviewer.
@@ -49,8 +51,9 @@ npx --yes skills add megastruktur/autonomous-campaign-development \
 Loading prerequisites: Orca's Skills UI scans installed skill homes — including the
 shared Agent Skills directory and OMP's `~/.omp/agent/skills` — so installed skills show
 up without manual symlinking. For OMP specifically, the community CLI has no
-`--agent omp` target: place or point the skill at OMP's documented skill path, or have
-OMP read `skills/autonomous-campaign-development/SKILL.md` explicitly.
+`--agent omp` target: place or point the skill at OMP's documented skill path, or after
+the project install above have OMP read the installed copy at
+`.agents/skills/autonomous-campaign-development/SKILL.md` explicitly.
 
 Note: `npx skills` collects anonymous telemetry by default; opt out with
 `DISABLE_TELEMETRY=1` ([docs](https://skills.sh/docs/cli)).
@@ -66,8 +69,9 @@ npx skills list
 ```
 
 To verify from the Orca side, check the Skills page in the Orca UI, or run
-`orca-ide skills list` on a Linux host (substitute the Orca executable your
-platform/runtime resolves; prefer `--json` for scripting).
+`orca-ide skills installed --json` on a Linux host (substitute the Orca executable your
+platform/runtime resolves). It returns safe selectors without exposing local paths;
+`orca-ide skills list` resolves only Orca's bundled registry, not third-party installs.
 
 Two Orca mechanisms are **not** routes to install this GitHub repo:
 
