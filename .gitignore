@@ -1,0 +1,20 @@
+# Local environment and secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Caches and tooling state
+.cache/
+node_modules/
+*.log
+
+# Community skills CLI install artifacts (project-scoped installs)
+.agents/
+
+# Campaign runtime artifacts (plans, state, evidence) — generated per campaign
+plans/
+*_STATE.json
+*_EVENTS.jsonl
+*_evidence/
+*_REPORT.md

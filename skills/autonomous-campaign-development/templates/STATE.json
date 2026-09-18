@@ -1,0 +1,105 @@
+{
+  "_readme": "Template for {prefix}_STATE.json. Replace every null and the one example task entry; keep filename-convention strings ({prefix}_*) as written. Sole writer: the coordinator. Atomic replace + revision bump on every write. Unknown stays null.",
+  "schema_version": 1,
+  "revision": 0,
+  "owner": {
+    "coordinator_id": null,
+    "acquired_at": null
+  },
+  "campaign": {
+    "name": null,
+    "prefix": null,
+    "repo_path": null,
+    "original_target_branch": null,
+    "starting_sha": null,
+    "campaign_worktree": null,
+    "campaign_branch": null
+  },
+  "approval": {
+    "approved": false,
+    "approver": null,
+    "approved_at": null,
+    "authorized_scope": null,
+    "final_merge_strategy": "--no-ff",
+    "push_authorized": false,
+    "non_convergence_policy": "evidence-based-pause"
+  },
+  "models": {
+    "coding": { "requested": null, "resolved": null },
+    "fallback": { "requested": null, "resolved": null },
+    "reviewer": { "requested": null, "resolved": null },
+    "pinned_at": null
+  },
+  "tasks": [
+    {
+      "task": null,
+      "depends_on": [],
+      "exclusive_resources": [],
+      "stage": "pending",
+      "worktree": null,
+      "branch": null,
+      "task_tip": null,
+      "session_handle": null,
+      "session_identity": null,
+      "model_in_use": null,
+      "runtime": {
+        "executor": null,
+        "evidence": null,
+        "last_result": null
+      },
+      "review": {
+        "handle": null,
+        "verdict": null,
+        "bound_to": { "commit": null, "tree": null, "build": null },
+        "findings": null,
+        "history": []
+      },
+      "merge_receipt": {
+        "task_tip": null,
+        "pre_squash_sha": null,
+        "squash_sha": null,
+        "tree": null
+      },
+      "remediation": [],
+      "pause": null,
+      "timestamps": {
+        "created_at": null,
+        "last_checked_at": null,
+        "last_progress_at": null
+      },
+      "cleanup": {
+        "inventory": [],
+        "verified": false
+      }
+    }
+  ],
+  "final": {
+    "acceptance_runtime_test": null,
+    "final_review": null,
+    "target_moved_integration": null,
+    "final_merge": {
+      "strategy": null,
+      "verified_refs_at": null,
+      "merge_commit": null
+    },
+    "post_merge_smoke_on_target": null,
+    "evidence_archived": false,
+    "resources_stopped": false,
+    "campaign_worktree_removed": false,
+    "report_written": false
+  },
+  "paths": {
+    "events": "{prefix}_EVENTS.jsonl",
+    "todo": "{prefix}_TODO.md",
+    "evidence_dir": "{prefix}_evidence/",
+    "report": "{prefix}_REPORT.md"
+  },
+  "next_action": null,
+  "pause": {
+    "active": false,
+    "reason": null,
+    "actor": null,
+    "paused_tasks": []
+  },
+  "last_updated_at": null
+}
