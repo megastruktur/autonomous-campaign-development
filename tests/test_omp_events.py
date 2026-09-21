@@ -81,8 +81,9 @@ def tool_result(eid, parent, tcid, t=None, name="Write", is_error=False):
 
 
 def tool_start(eid, parent, tcid, t=None):
+    # real OMP v3 shape: customType + data.toolCallId
     return row(eid, parent, t or iso(T0 + 2), "custom",
-               name="tool_execution_start", data={"toolCallId": tcid})
+               customType="tool_execution_start", data={"toolCallId": tcid})
 
 
 def branch_discard(eid, parent, target, t=None, variant="flat"):
@@ -260,6 +261,69 @@ class TestProgressSemantics(Base):
         self.assertTrue(s["last_tool"]["is_error"])
         self.assertEqual(s["error_totals"]["tool_error"], 1)
 
+class TestToolContract(Base):
+
+    def test_failed_assistant_toolcalls_never_pending(self):
+        write_rows(self.path, [
+            header(),
+            assistant("e1", "e0", stop="error", errorId=1,
+                      errorMessage=SECRET_ERROR,
+                      content=[tool_call_part("tc1")]),
+        ])
+        s = self.adapter().poll(self.path)["summary"]
+        self.assertEqual(s["pending_tools"], [])  # no eternally running task
+        self.assertEqual(s["counters"]["failed_assistant"], 1)
+
+    def test_tool_result_without_iserror_is_unknown_not_success(self):
+        write_rows(self.path, [
+            header(),
+            assistant("e1", "e0", stop="toolUse",
+                      content=[tool_call_part("tc1")]),
+        ])
+        a = self.adapter()
+        a.poll(self.path)
+        # isError key entirely absent (wrong-type handled the same way)
+        write_rows(self.path, [
+            row("r1", "e1", iso(T0 + 2), "message", message={
+                "role": "toolResult", "toolCallId": "tc1", "toolName": "Write",
+                "content": SECRET_CONTENT}),
+        ], mode="a")
+        rep = a.poll(self.path)
+        s = rep["summary"]
+        self.assertIn("unknown_tool_result", rep["new_faults"])
+        self.assertIsNone(s["last_tool"]["is_error"])  # unknown, not success
+        self.assertEqual(s["counters"]["tool_results_error"], 0)
+        self.assertEqual(s["pending_tools"], [])       # completion observed
+        self.assertTrue(s["uncertainty"]["unknown_seen"])
+
+    def test_structured_errorid_not_persisted_raw(self):
+        write_rows(self.path, [
+            header(),
+            assistant("e1", "e0", stop="error",
+                      errorId={"secret": SECRET_ERROR, "code": 1},
+                      errorMessage=SECRET_ERROR),
+        ])
+        a = self.adapter()
+        rep = a.poll(self.path)
+        blob = self.dump(a, rep)
+        self.assertNotIn("secret", blob)
+        self.assertNotIn(SECRET_ERROR[:30], blob)
+        e = a.snapshot()["recent_errors"][0]
+        self.assertTrue(e["error_id"].startswith("id:"))
+
+    def test_unsafe_pending_ids_rejected(self):
+        write_rows(self.path, [
+            header(),
+            assistant("e1", "e0", stop="toolUse",
+                      content=[tool_call_part("x" * 5000)]),
+        ])
+        rep = self.adapter().poll(self.path)
+        s = rep["summary"]
+        self.assertIn("unknown_shape", rep["new_faults"])
+        self.assertEqual(s["pending_tools"], [])
+        self.assertNotIn("xxxxx", json.dumps(s))
+
+
 class TestBranchesAndDedupe(Base):
 
     def test_discarded_branch_retraction_all_variants(self):
@@ -296,6 +360,141 @@ class TestBranchesAndDedupe(Base):
         self.assertEqual(s["counters"]["discarded_branch_events"], 1)
         self.assertEqual(s["counters"]["duplicates"], 1)
         self.assertEqual(s["last_success"]["entry_id"], "e1")
+
+
+class TestActiveChain(Base):
+
+    def test_deep_linear_chain_no_perpetual_unknown(self):
+        # real sessions run 164-282 deep; the retained chain must support
+        # far more than the old 64-hop bound with zero ancestry faults
+        depth = 3000
+        rows = [header()]
+        parent = "e0"
+        for i in range(1, depth + 1):
+            rows.append(assistant("e%d" % i, parent, t=iso(T0 + i)))
+            parent = "e%d" % i
+        write_rows(self.path, rows)
+        a = self.adapter()
+        polls = 0
+        while True:
+            rep = a.poll(self.path)
+            polls += 1
+            if not rep["backlog"]:
+                break
+            self.assertLess(polls, 20)
+        s = rep["summary"]
+        self.assertEqual(s["counters"]["successful_assistant"], depth)
+        self.assertEqual(s["uncertainty"]["ancestry_uncertain"], 0)
+        self.assertNotIn("ancestry_uncertain", s["faults"])
+        self.assertEqual(s["last_success"]["entry_id"], "e%d" % depth)
+
+    def test_branch_switch_retracts_success_tool_and_pending(self):
+        write_rows(self.path, [
+            header(),
+            assistant("a1", "e0", stop="toolUse",
+                      content=[tool_call_part("tc1")], t=iso(T0 + 1)),
+            tool_result("r1", "a1", "tc1", t=iso(T0 + 2)),
+            assistant("a2", "r1", stop="stop",
+                      content=[tool_call_part("tc2")], t=iso(T0 + 3)),
+        ])
+        a = self.adapter()
+        s = a.poll(self.path)["summary"]
+        self.assertEqual(s["last_success"]["entry_id"], "a2")
+        self.assertEqual(s["last_tool"]["tool_call_id"], "tc1")
+        self.assertEqual([p["tool_call_id"] for p in s["pending_tools"]],
+                         ["tc2"])
+        # branch switch: continue from a1 -> r1/a2 leave the active head
+        write_rows(self.path, [
+            assistant("b1", "a1", stop="stop", t=iso(T0 + 4))], mode="a")
+        s = a.poll(self.path)["summary"]
+        self.assertEqual(s["last_success"]["entry_id"], "b1")
+        self.assertIsNone(s["last_tool"])          # r1 off the active head
+        self.assertEqual(s["pending_tools"], [])   # tc2 never completes
+        self.assertEqual(s["counters"]["pending_retracted"], 1)
+        self.assertEqual(s["counters"]["discarded_success_retracted"], 1)
+        self.assertEqual(s["counters"]["successful_assistant"], 2)  # a1,b1
+
+    def test_discard_of_current_branch_retracts_pending(self):
+        # review blocker 5 probe: toolCall on e2, branch discarded at e2
+        write_rows(self.path, [
+            header(),
+            assistant("e1", "e0", stop="toolUse",
+                      content=[tool_call_part("tc1")], t=iso(T0 + 1)),
+            tool_result("r1", "e1", "tc1", t=iso(T0 + 2)),
+            assistant("e2", "r1", stop="toolUse",
+                      content=[tool_call_part("tc2")], t=iso(T0 + 3)),
+            branch_discard("b", "e2", "e2"),
+        ])
+        s = self.adapter().poll(self.path)["summary"]
+        self.assertEqual(s["pending_tools"], [])  # tc2 not running forever
+        self.assertEqual(s["counters"]["pending_retracted"], 1)
+        self.assertEqual(s["last_success"]["entry_id"], "e1")
+        self.assertEqual(s["last_tool"]["tool_call_id"], "tc1")  # still live
+        # live continuation from the truncation point works
+        write_rows(self.path, [
+            assistant("e3", "r1", stop="stop", t=iso(T0 + 4))], mode="a")
+        s = self.adapter().poll(self.path)["summary"]
+        self.assertEqual(s["last_success"]["entry_id"], "e3")
+        self.assertEqual(s["uncertainty"]["ancestry_uncertain"], 0)
+
+    def test_parent_cycle_bounded_and_observable(self):
+        write_rows(self.path, [
+            header(),
+            assistant("e1", "e0", stop="stop"),
+            row("x1", "x2", iso(T0 + 1), "title"),
+            row("x2", "x1", iso(T0 + 2), "title"),
+            row("g", "x2", iso(T0 + 3), "title"),   # walk g->x2->x1->x2: cycle
+        ])
+        rep = self.adapter().poll(self.path)
+        self.assertIn("ancestry_cycle", rep["summary"]["faults"])
+        # adapter stays alive and keeps tracking the log
+        write_rows(self.path, [
+            assistant("h1", "e1", stop="stop", t=iso(T0 + 4))], mode="a")
+        rep = self.adapter().poll(self.path)
+        self.assertEqual(rep["summary"]["counters"]["events"], 6)
+
+
+class TestRealObservedShapes(Base):
+
+    def test_envelopeless_title_first_row_is_service_not_fault(self):
+        # shape-equivalent to the real leading OMP row
+        # {"pad","title","type","updatedAt","v"} — no id/parentId/timestamp
+        with open(self.path, "w") as f:
+            f.write(json.dumps({
+                "pad": 0, "title": "SYNTHETIC title", "type": "title",
+                "updatedAt": iso(T0), "v": 1}) + "\n")
+            f.write(json.dumps({
+                # real session headers omit parentId entirely
+                "cwd": SECRET_CWD, "id": "e0", "timestamp": iso(T0),
+                "type": "session", "version": 3}) + "\n")
+            f.write(json.dumps(
+                assistant("e1", "e0", stop="stop")) + "\n")
+        rep = self.adapter().poll(self.path)
+        self.assertEqual(rep["status"], "ok")
+        self.assertFalse(rep["new_faults"])
+        s = rep["summary"]
+        self.assertEqual(s["counters"]["service_events"], 1)
+        self.assertEqual(s["session"]["header_id"], "e0")
+        self.assertEqual(s["last_success"]["entry_id"], "e1")
+
+    def test_envelopeless_unknown_type_still_fail_safe(self):
+        with open(self.path, "w") as f:
+            f.write(json.dumps({"type": "mystery", "v": 1}) + "\n")
+            f.write(json.dumps(header()) + "\n")
+        rep = self.adapter().poll(self.path)
+        self.assertEqual(rep["status"], "fault")
+        self.assertIn("unknown_shape", rep["new_faults"])
+
+    def test_custom_session_exit_is_service(self):
+        write_rows(self.path, [
+            header(),
+            assistant("e1", "e0", stop="stop"),
+            row("e2", "e1", iso(T0 + 2), "custom", customType="session_exit",
+                data={"kind": "exit", "reason": "SYNTHETIC"}),
+        ])
+        rep = self.adapter().poll(self.path)
+        self.assertEqual(rep["status"], "ok")
+        self.assertEqual(rep["summary"]["counters"]["service_events"], 1)
 
 
 class TestFaultsAndRobustness(Base):
@@ -385,6 +584,55 @@ class TestFaultsAndRobustness(Base):
         self.assertLessEqual(rep["tail_bytes"], 512)
         self.assertEqual(rep["offset"], os.path.getsize(self.path))
 
+    def test_large_ordinary_rows_within_bound_processed(self):
+        # 150KB-class rows (real logs reach ~146KB) must just work
+        big = "x" * (150 * 1024)
+        rows = [header()]
+        parent = "e0"
+        for i in range(1, 4):
+            rows.append(assistant("e%d" % i, parent, t=iso(T0 + i),
+                                  providerPayload=big))
+            parent = "e%d" % i
+        write_rows(self.path, rows)
+        rep = self.adapter().poll(self.path)
+        self.assertEqual(rep["status"], "ok")
+        s = rep["summary"]
+        self.assertEqual(s["counters"]["successful_assistant"], 3)
+        self.assertEqual(s["last_success"]["entry_id"], "e3")
+        self.assertNotIn("xxxx", json.dumps(s))  # payload never retained
+
+    def test_oversized_row_envelope_keeps_descendant_ancestry(self):
+        huge = json.dumps(row("ex", "e1", iso(T0 + 1), "message",
+                              message={"role": "assistant", "stopReason": "stop",
+                                       "content": [], "blob": "y" * 9000}))
+        write_rows(self.path, [header(),
+                               assistant("e1", "e0", t=iso(T0))])
+        with open(self.path, "a") as f:
+            f.write(huge + "\n")
+        write_rows(self.path, [
+            assistant("e2", "ex", t=iso(T0 + 2)),
+            assistant("e3", "e2", t=iso(T0 + 3)),
+        ], mode="a")
+        rep = self.adapter(max_row_bytes=1024).poll(self.path)
+        self.assertIn("oversized_row", rep["new_faults"])
+        s = rep["summary"]
+        self.assertEqual(s["counters"]["oversized_envelope_recorded"], 1)
+        # descendants of the skipped row resolve: success continues past ex
+        self.assertEqual(s["counters"]["successful_assistant"], 3)
+        self.assertEqual(s["last_success"]["entry_id"], "e3")
+        self.assertEqual(s["uncertainty"]["ancestry_uncertain"], 0)
+        self.assertNotIn("yyy", json.dumps(s))
+
+    def test_deeply_nested_row_raises_no_recursion_crash(self):
+        with open(self.path, "w") as f:
+            f.write(json.dumps(header()) + "\n")
+            f.write("[" * 5000 + "]" * 5000 + "\n")
+            f.write(json.dumps(assistant("e1", "e0", stop="stop")) + "\n")
+        rep = self.adapter().poll(self.path)
+        self.assertEqual(rep["status"], "fault")
+        self.assertEqual(rep["new_faults"].get("malformed_row"), 1)
+        self.assertEqual(rep["summary"]["last_success"]["entry_id"], "e1")
+
     def test_unterminated_oversized_tail_dropped_safely(self):
         with open(self.path, "w") as f:
             f.write(json.dumps(header()) + "\n")
@@ -464,6 +712,84 @@ class TestCursorLifecycle(Base):
         self.assertEqual(rep["summary"]["last_success"]["entry_id"], "e3")
         self.assertEqual(rep["offset"], os.path.getsize(self.path))
 
+    def test_partial_tool_arguments_never_persisted(self):
+        # partial row cut mid tool-arguments: the sentinel must not appear
+        # in exported state in ANY encoding (no partial_b64 successor)
+        partial = json.dumps(assistant(
+            "e2", "e1", stop="toolUse",
+            content=[tool_call_part("tc1")]))
+        cut = partial.index(SECRET_ARG) + len(SECRET_ARG) // 2
+        with open(self.path, "w") as f:
+            f.write(json.dumps(header()) + "\n")
+            f.write(json.dumps(assistant("e1", "e0", stop="stop")) + "\n")
+            f.write(partial[:cut])
+        a = self.adapter()
+        a.poll(self.path)
+        state = json.loads(json.dumps(a.export_state()))
+        blob = json.dumps(state)
+        self.assertNotIn(SECRET_ARG, blob)
+        self.assertNotIn("partial_b64", blob)
+        import base64
+        for frag in (SECRET_ARG[:16], SECRET_ARG[16:]):
+            self.assertNotIn(
+                base64.b64encode(frag.encode()).decode(), blob)
+        # reload, append the completion: row processed exactly once
+        b = OmpSessionAdapter.from_state(state, clock=self.clock)
+        with open(self.path, "a") as f:
+            f.write(partial[cut:] + "\n")
+        rep = b.poll(self.path)
+        self.assertEqual(rep["summary"]["counters"]["duplicates"], 0)
+        self.assertEqual(rep["summary"]["counters"]["events"], 3)
+        self.assertEqual([p["tool_call_id"]
+                          for p in rep["summary"]["pending_tools"]], ["tc1"])
+
+    def test_format1_state_rejected_explicitly(self):
+        a = self.adapter()
+        old = a.export_state()
+        old["format"] = 1
+        old["partial_b64"] = "AAAA"  # legacy unsanitized tail field
+        with self.assertRaises(ValueError) as ctx:
+            OmpSessionAdapter.from_state(old, clock=self.clock)
+        self.assertIn("incompatible", str(ctx.exception))
+        # no silent reset: the loading adapter is not usable-but-empty
+        with self.assertRaises(ValueError):
+            a.load_state({"format": 99})
+        with self.assertRaises(ValueError):
+            a.load_state({"format": 0})
+        with self.assertRaises(ValueError):
+            a.load_state("not a dict")
+
+    def test_corrupt_state_raises_clean_error(self):
+        a = self.adapter()
+        good = a.export_state()
+        for mutation in (
+                lambda s: s.update(offset="12"),
+                lambda s: s.update(offset=-1),
+                lambda s: s.update(seen="e1"),
+                lambda s: s.update(entries={"e1": 5}),
+                lambda s: s.update(pending={"tc": {"tool_call_id": "tc"}}),
+                lambda s: s.update(counters={"events": -1}),
+                lambda s: s.update(head=42),
+                lambda s: s.update(session={"header_id": 1, "version": 3}),
+        ):
+            with self.subTest(mutation=mutation):
+                state = json.loads(json.dumps(good))
+                mutation(state)
+                with self.assertRaises(ValueError) as ctx:
+                    a.load_state(state)
+                self.assertIn("corrupt state", str(ctx.exception))
+
+    def test_unknown_loaded_keys_not_retained(self):
+        a = self.adapter()
+        state = a.export_state()
+        state["evil_extra"] = {"raw": SECRET_CONTENT}
+        state["counters_extra"] = [SECRET_ARG]
+        b = OmpSessionAdapter.from_state(state, clock=self.clock)
+        blob = json.dumps(b.export_state())
+        self.assertNotIn("evil_extra", blob)
+        self.assertNotIn("counters_extra", blob)
+        self.assertNotIn(SECRET_CONTENT, blob)
+
     def test_truncation_rebuild_without_manufactured_progress(self):
         write_rows(self.path, [
             header(),
@@ -530,10 +856,11 @@ class TestTimestampsAndSanitization(Base):
             assistant("e1", "e0", t="not-a-timestamp", stop="stop"),
         ])
         s = self.adapter().poll(self.path)["summary"]
-        ls = s["last_success"]
-        self.assertEqual(ls["entry_id"], "e1")
-        self.assertFalse(ls["ts_valid"])
-        self.assertIsNone(ls["ts"])
+        # malformed ts: completion observed as a counter, but it NEVER
+        # updates the last-successful semantic event
+        self.assertIsNone(s["last_success"])
+        self.assertEqual(s["counters"]["success_invalid_ts"], 1)
+        self.assertEqual(s["counters"]["successful_assistant"], 0)
         path2 = os.path.join(self.tmp.name, "future.jsonl")
         future = self.clock.now + 3600
         write_rows(path2, [
@@ -541,8 +868,9 @@ class TestTimestampsAndSanitization(Base):
             assistant("e1", "e0", t=iso(future), stop="stop"),
         ])
         rep = self.adapter().poll(path2)
-        ls = rep["summary"]["last_success"]
-        self.assertFalse(ls["ts_valid"])  # future ts flagged, not trusted
+        s = rep["summary"]
+        self.assertIsNone(s["last_success"])  # future ts not trusted
+        self.assertEqual(s["counters"]["success_invalid_ts"], 1)
         self.assertIn("invalid_timestamp", rep["new_faults"])
         # freshness signal comes from poll-time observation, not the bad ts
         self.assertEqual(

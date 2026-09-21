@@ -20,12 +20,28 @@ summary == snapshot() at poll end.  Any new fault-class observation
 unknown event type or critical shape) yields status "fault": unknown is
 observable, never healthy.
 
-Persistence: state carries file identity (st_dev/st_ino) + session header
-UUID + binary offset + bounded tail of the incomplete trailing line.  Polls
-never rescan the whole file except after a rebuild trigger (identity change =
-rotation/session switch, or same-file truncation size < offset), which is
-reported as `rebuilt` and marks re-derived progress as historical
-(`live: false`), never as freshly observed success.
+Persistence (state format 2): state carries file identity (st_dev/st_ino) +
+session header UUID + the consumed binary offset and bounded structural
+metadata.  Raw line tails are NEVER persisted in any encoding — the offset
+already excludes the incomplete trailing row, which is re-read from the
+file after reload.  Older formats are refused with an explicit
+incompatibility error (no silent reset).  Polls never rescan the whole
+file except after a rebuild trigger (identity change = rotation/session
+switch, or same-file truncation size < offset), which is reported as
+`rebuilt` and marks re-derived progress as historical (`live: false`),
+never as freshly observed success.
+
+Active-branch semantics: the adapter tracks the current active chain
+explicitly (head = latest entry; linear appends extend it, any other
+parent recomputes the chain from the new entry).  Only entries reachable
+from the current head count as live.  Siblings that leave the head's
+ancestry — branch switches, tree navigation, discarded branches — have
+their last_success / last_tool / pending projections retracted; there is
+no passive all-nondiscarded-siblings-are-active fallback.  A row replayed
+under a discarded root never becomes the active head.  The retained chain
+is bounded by entries_cap (default 4096, far above observed real session
+depths of ~300) with cycle detection; ancestry beyond the retained bound
+is explicitly "uncertain" (documented unknown), never guessed live.
 
 Sanitization: retained state/output contain only structural metadata —
 entry/toolCall IDs, allowlisted tool names (unknown names irreversibly
@@ -35,35 +51,60 @@ error text, or cwd.
 
 Semantics exposed (snapshot): last successful assistant event
 (stopReason in {stop, toolUse} AND no errorId, live branch only, valid ts),
-last completed tool result with isError distinction, pending tools
-(kind "ask_waiting" vs "running"), error totals / consecutive failure streak /
-bounded recent-error ring, session + observation faults, uncertainty flags.
-Non-message/service events (model_usage, title, model-change, compaction,
-custom) never create semantic task progress.  stopReason "error" (with
-errorId/errorMessage) and "aborted" are explicit failures; tool results with
-isError are completion/error observations, never success.  A success on a
-branch later reported discarded (branch_summary kind
-"discarded-entry-branch") is retracted.  Malformed or future timestamps are
-flagged invalid and are not proof of current progress (freshness comes from
-poll-time `last_append_at`).
+last completed tool result (isError true => error observation; false =>
+clean completion; missing/wrong-typed => explicitly unknown, NEVER a
+success signal), pending tools (kind "ask_waiting" vs "running"), error
+totals / consecutive failure streak / bounded recent-error ring, session +
+observation faults, uncertainty flags.  Non-message/service events
+(model_usage, title, model_change, compaction, custom, envelopeless title
+rows) never create semantic task progress.  stopReason "error" (with
+errorId/errorMessage) and "aborted" are explicit failures; toolCalls on a
+failed/aborted assistant never register pendings (no eternally running
+tasks).  A success on a branch later discarded or switched away from is
+retracted.
+
+Timestamp contract: a success with a malformed or future timestamp NEVER
+updates last_success (observable only via counters.success_invalid_ts and
+an invalid_timestamp fault).  The occurrence timestamp from the log is
+recorded for age computation, but freshness of the step clock comes ONLY
+from poll-time observation.last_append_at, which is refreshed exclusively
+by newly appended bytes — never by replayed history.  A historical
+successful event remains valid past evidence (last_success, live:false
+during bootstrap replay); it is not "freshly completed now".
+
+Watcher status contract: poll() "status" reflects THIS poll only —
+"fault" means at least one new fault-class observation occurred during
+this poll (see new_faults); it does not mean the session is permanently
+broken.  Persistent uncertainty (unknown shapes seen, ancestry beyond the
+retained bound, evictions, pending overflow) lives in
+summary.uncertainty / summary.faults and survives across polls.  A
+watcher should alert on persistent uncertainty/uncertain ancestry and on
+repeated fault polls, and treat a lone fault poll followed by "ok" as a
+recovered transient.
 
 Fail-safe decisions (conservative, documented): ancestry that cannot be
-resolved within the bounded parent map counts as uncertain and does NOT
-count as success; assistant messages without a recognizable stopReason are
-"other" (neither success nor failure, unknown-flagged); unsupported session
-version poisons the scan (lines keep being consumed for cursor health, but
-no semantics); dedupe/branch structures are bounded and eviction raises an
-uncertainty flag rather than guessing.
+resolved within the bounded retained chain counts as uncertain and does
+NOT count as success; assistant messages without a recognizable stopReason
+are "other" (neither success nor failure, unknown-flagged); unsupported
+session version poisons the scan (lines keep being consumed for cursor
+health, but no semantics); dedupe/branch structures are bounded and
+eviction raises an uncertainty flag rather than guessing.  Rows above
+max_row_bytes (default 2 MiB — observed real rows reach ~150 KB) fail
+closed: the payload is never parsed or persisted, but the envelope head
+(id/parentId sniff, NOT a streaming parser) still feeds the parent map so
+descendants keep resolving.  Deeply nested rows that trip RecursionError
+count as malformed, never crash a poll.
 
-OMP v3 shape assumptions (from prior peer inspection of OMP 18.2.6; where
-the peer flagged uncertainty — branch_summary nesting, custom event naming —
-parsing is tolerant over a small set of candidate locations and unrecognized
-shapes surface as unknown, not silence).
+OMP v3 shape assumptions, verified against real session logs: the first
+row may be an envelopeless title row {"pad","title","type","updatedAt","v"};
+session headers may omit parentId (absent == root); custom rows carry
+customType + data (tool_execution_start -> data.toolCallId; session_exit);
+branch_summary nesting remains tolerant over a small set of candidate
+locations; unrecognized shapes surface as unknown, not silence.
 """
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
 import os
@@ -76,8 +117,16 @@ __all__ = ["OmpSessionAdapter"]
 
 SUPPORTED_VERSIONS = {3, "3"}
 SERVICE_EVENT_TYPES = {
-    "model_usage", "title", "compaction", "model-change", "model_change",
+    # Documented non-progress service rows (observed in real OMP v3 logs:
+    # model_change; title/compaction/model_usage per peer inspection;
+    # thinking_level_change/service_tier_change per OMP settings events).
+    "model_usage", "title", "title_change", "compaction",
+    "model-change", "model_change",
+    "thinking_level_change", "service_tier_change",
 }
+# Service rows OMP writes WITHOUT the id/parentId/timestamp envelope —
+# observed: the leading title row {"pad","title","type","updatedAt","v"}.
+ENVELOPELESS_SERVICE_TYPES = {"title", "title_change"}
 NON_PROGRESS_ROLES = {"user", "system", "developer", "tool", "summary"}
 ASK_TOOL_NAMES = {
     "ask", "ask_user", "askuser", "ask_user_question",
@@ -85,12 +134,12 @@ ASK_TOOL_NAMES = {
 }
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$")
 _SAFE_SMALL = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
-_SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,127}$")
-_MAX_ANCESTRY_DEPTH = 64
+# real OMP toolCallIds are 62-char "call_…|…" strings — '|' included
+_SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-|]{0,127}$")
 
 DEFAULT_LIMITS = {
-    "max_read_bytes": 1 << 20,   # bytes read per poll
-    "max_row_bytes": 1 << 16,    # any single JSONL row larger than this -> skip
+    "max_read_bytes": 4 << 20,   # bytes read per poll
+    "max_row_bytes": 2 << 20,    # any single JSONL row larger than this -> skip
     "max_events_per_poll": 2000, # complete rows parsed per poll
     "seen_cap": 4096,            # dedupe entry ids retained
     "entries_cap": 4096,         # parent-chain map retained
@@ -149,7 +198,15 @@ def _walk_for(container, key, depth=2):
                 return found
     return None
 
-_TSTATE_VERSION = 1
+_TSTATE_VERSION = 2
+
+# Envelope sniff for oversized rows: extract id/parentId from the row head
+# only (envelope fields lead OMP rows) so descendants still resolve their
+# ancestry.  This is NOT a streaming JSON parser — payloads stay unread.
+_SNIFF_HEAD = 4096
+_SNIFF_ID = re.compile(rb'"id"\s*:\s*"([A-Za-z0-9][A-Za-z0-9_.\-]{0,127})"')
+_SNIFF_PARENT = re.compile(
+    rb'"parentId"\s*:\s*(?:"([A-Za-z0-9][A-Za-z0-9_.\-]{0,127})"|null)')
 
 
 class OmpSessionAdapter:
@@ -172,19 +229,25 @@ class OmpSessionAdapter:
 
     def _reset(self):
         self._seen_set = set()
+        # runtime-only active chain (root..head); rebuilt from persisted
+        # "head" + "entries" on load — never exported separately
+        self._chain = []
+        self._active_set = set()
+        self._chain_truncated = False        # walk hit bound/missing/cycle
+        self._chain_under_discarded = False  # chain tops a discarded root
         self.s = {
             "format": _TSTATE_VERSION,
             "session": None,            # {"header_id","version"} once header seen
             "session_fault": None,      # e.g. "unsupported_version"
             "file": None,               # {"dev","ino"}
             "offset": 0,                # consumed bytes (fully processed/skipped)
-            "partial_b64": "",          # bounded unconsumed tail (incl. partial line)
             "skip_mode": False,         # dropping bytes until next newline
             "bootstrap_pending": True,  # still scanning history this generation
             "generations": 0,
             "prev_header_id": None,
             "seen": [],                 # bounded dedupe ids (order = FIFO)
             "entries": {},              # bounded id -> parent
+            "head": None,               # tip of the current active chain
             "discarded": [],            # bounded discarded branch roots
             "last_success": None,
             "success_ring": [],
@@ -198,7 +261,8 @@ class OmpSessionAdapter:
                 "assistant_other": 0, "tool_results": 0, "tool_results_error": 0,
                 "service_events": 0, "skipped_schema_fault": 0,
                 "discarded_branch_events": 0, "discarded_success_retracted": 0,
-                "duplicates": 0,
+                "oversized_envelope_recorded": 0, "duplicates": 0,
+                "pending_retracted": 0, "success_invalid_ts": 0,
             },
             "faults": {},               # kind -> cumulative count
             "faults_recent": [],        # bounded [{"kind","at"}]
@@ -211,10 +275,14 @@ class OmpSessionAdapter:
         }
 
     def export_state(self):
-        """JSON-serializable persistent state (cursor + bounded metadata)."""
-        out = json.loads(json.dumps(self.s))  # detach + validate JSON-safety
-        out["partial_b64"] = base64.b64encode(self._tail).decode("ascii")
-        return out
+        """JSON-serializable persistent state (cursor + bounded metadata).
+
+        Only the consumed offset is persisted — never raw line tails, in any
+        encoding (partial_b64 from format 1 was reversible and is gone).
+        The offset already excludes the unconsumed partial row, which is
+        simply re-read from the file after reload.
+        """
+        return json.loads(json.dumps(self.s))  # detach + validate JSON-safety
 
     @classmethod
     def from_state(cls, state, clock=time.time, **limits):
@@ -223,17 +291,217 @@ class OmpSessionAdapter:
         return adapter
 
     def load_state(self, state):
-        if not isinstance(state, dict) or state.get("format") != _TSTATE_VERSION:
-            raise ValueError("incompatible state")
+        if not isinstance(state, dict):
+            raise ValueError("incompatible state: not a dict")
+        fmt = state.get("format")
+        if fmt != _TSTATE_VERSION:
+            raise ValueError(
+                "incompatible state format %r (supported: %d); older formats "
+                "may retain unsanitized raw line tails and are refused — "
+                "discard and rescan from scratch" % (fmt, _TSTATE_VERSION))
         self._reset()
-        self.s.update(json.loads(json.dumps(state)))
+        self.s.update(self._validated_state(state))
         self._seen_set = set(self.s["seen"])
-        try:
-            self._tail = base64.b64decode(self.s.pop("partial_b64", "") or "")
-        except Exception:
-            self._tail = b""
-        if not isinstance(self._tail, bytes):
-            self._tail = b""
+        self._tail = b""  # partial row re-read from the persisted offset
+        self._rebuild_chain()
+
+    def _validated_state(self, state):
+        """Whitelist + type/bounds validation; corrupt state -> ValueError.
+
+        Only known keys are retained — arbitrary loaded keys never survive.
+        """
+        def bad(msg):
+            raise ValueError("corrupt state: " + msg)
+
+        def is_num(x):
+            return isinstance(x, (int, float)) and not isinstance(x, bool)
+
+        def opt_str(v, what):
+            if v is not None and not isinstance(v, str):
+                bad("%s must be str|None" % what)
+            return v
+
+        def str_list(v, cap, what):
+            if (not isinstance(v, list) or len(v) > cap
+                    or not all(isinstance(x, str) for x in v)):
+                bad("%s must be a list of <=%d str" % (what, cap))
+            return list(v)
+
+        def int_map(v, what, keys=None):
+            if not isinstance(v, dict):
+                bad("%s must be a dict" % what)
+            for k, n in v.items():
+                if not isinstance(k, str) or keys and k not in keys:
+                    bad("%s: unknown key %r" % (what, k))
+                if not isinstance(n, int) or isinstance(n, bool) or n < 0:
+                    bad("%s[%r] must be a non-negative int" % (what, k))
+            return dict(v)
+
+        lim = self.lim
+        out = {"format": _TSTATE_VERSION}
+        sess = state.get("session")
+        if sess is not None:
+            if (not isinstance(sess, dict)
+                    or not isinstance(sess.get("header_id"), str)
+                    or not isinstance(sess.get("version"), int)):
+                bad("session shape")
+            out["session"] = {"header_id": sess["header_id"],
+                              "version": sess["version"]}
+        else:
+            out["session"] = None
+        out["session_fault"] = opt_str(state.get("session_fault"),
+                                       "session_fault")
+        f = state.get("file")
+        if f is not None:
+            if (not isinstance(f, dict)
+                    or not isinstance(f.get("dev"), int)
+                    or not isinstance(f.get("ino"), int)):
+                bad("file identity shape")
+            out["file"] = {"dev": f["dev"], "ino": f["ino"]}
+        else:
+            out["file"] = None
+        off = state.get("offset")
+        if not isinstance(off, int) or isinstance(off, bool) or off < 0:
+            bad("offset must be a non-negative int")
+        out["offset"] = off
+        for flag in ("skip_mode", "bootstrap_pending"):
+            if not isinstance(state.get(flag), bool):
+                bad("%s must be bool" % flag)
+            out[flag] = state[flag]
+        gen = state.get("generations")
+        if not isinstance(gen, int) or isinstance(gen, bool) or gen < 0:
+            bad("generations must be a non-negative int")
+        out["generations"] = gen
+        out["prev_header_id"] = opt_str(state.get("prev_header_id"),
+                                        "prev_header_id")
+        out["seen"] = str_list(state.get("seen", []), lim["seen_cap"], "seen")
+        entries = state.get("entries")
+        if (not isinstance(entries, dict) or len(entries) > lim["entries_cap"]
+                or not all(isinstance(k, str) for k in entries)
+                or not all(v is None or isinstance(v, str)
+                           for v in entries.values())):
+            bad("entries must be a <=%d dict of str->str|None"
+                % lim["entries_cap"])
+        out["entries"] = dict(entries)
+        out["head"] = opt_str(state.get("head"), "head")
+        out["discarded"] = str_list(state.get("discarded", []),
+                                    lim["discarded_cap"], "discarded")
+
+        def success_rec(r, what):
+            if not isinstance(r, dict):
+                bad(what + " shape")
+            if (not isinstance(r.get("entry_id"), str)
+                    or not (r.get("ts") is None or is_num(r.get("ts")))
+                    or not isinstance(r.get("ts_valid"), bool)
+                    or not (r.get("stop_reason") is None
+                            or isinstance(r.get("stop_reason"), str))
+                    or not isinstance(r.get("live"), bool)):
+                bad(what + " fields")
+            return {"entry_id": r["entry_id"], "ts": r.get("ts"),
+                    "ts_valid": r["ts_valid"],
+                    "stop_reason": r.get("stop_reason"),
+                    "live": r["live"]}
+
+        ls = state.get("last_success")
+        out["last_success"] = (success_rec(ls, "last_success")
+                               if ls is not None else None)
+        ring = state.get("success_ring", [])
+        if not isinstance(ring, list) or len(ring) > lim["success_ring"]:
+            bad("success_ring bound")
+        out["success_ring"] = [success_rec(r, "success_ring") for r in ring]
+
+        def tool_rec(r, what):
+            if not isinstance(r, dict):
+                bad(what + " shape")
+            if (not isinstance(r.get("tool_call_id"), str)
+                    or not isinstance(r.get("name"), str)
+                    or r.get("name_class") not in ("ask", "tool", "unknown")
+                    or not isinstance(r.get("is_error"), (bool, type(None)))
+                    or not (r.get("ts") is None or is_num(r.get("ts")))
+                    or not isinstance(r.get("ts_valid"), bool)
+                    or not isinstance(r.get("entry_id"), str)):
+                bad(what + " fields")
+            return {"tool_call_id": r["tool_call_id"], "name": r["name"],
+                    "name_class": r["name_class"],
+                    "is_error": r.get("is_error"), "ts": r.get("ts"),
+                    "ts_valid": r["ts_valid"], "entry_id": r["entry_id"]}
+
+        lt = state.get("last_tool")
+        out["last_tool"] = tool_rec(lt, "last_tool") if lt is not None else None
+        pending = state.get("pending")
+        if (not isinstance(pending, dict) or len(pending) > lim["pending_cap"]
+                or not all(isinstance(k, str) for k in pending)):
+            bad("pending bound")
+        out_pending = {}
+        for k, r in pending.items():
+            rec = tool_rec(r, "pending")
+            if rec["tool_call_id"] != k:
+                bad("pending key mismatch")
+            if (rec.pop("is_error") is not None
+                    or not isinstance(r.get("started"), bool)
+                    or r.get("kind") not in ("ask_waiting", "running")):
+                bad("pending fields")
+            rec["kind"] = r["kind"]
+            rec["started"] = r["started"]
+            out_pending[k] = rec
+        out["pending"] = out_pending
+        cf = state.get("consecutive_failures")
+        if not isinstance(cf, int) or isinstance(cf, bool) or cf < 0:
+            bad("consecutive_failures must be a non-negative int")
+        out["consecutive_failures"] = cf
+        out["error_totals"] = int_map(
+            state.get("error_totals", {}), "error_totals",
+            keys={"assistant_error", "assistant_aborted", "tool_error"})
+        re_ring = state.get("recent_errors", [])
+        if not isinstance(re_ring, list) or len(re_ring) > lim["recent_errors"]:
+            bad("recent_errors bound")
+        for r in re_ring:
+            if (not isinstance(r, dict)
+                    or not isinstance(r.get("category"), str)
+                    or not (r.get("error_id") is None
+                            or isinstance(r.get("error_id"), (str, int)))
+                    or not (r.get("fingerprint") is None
+                            or isinstance(r.get("fingerprint"), str))
+                    or not (r.get("ts") is None or is_num(r.get("ts")))
+                    or not isinstance(r.get("ts_valid"), bool)):
+                bad("recent_errors fields")
+        out["recent_errors"] = [dict(r) for r in re_ring]
+        out["counters"] = int_map(state.get("counters", {}), "counters",
+                                  keys=set(self.s["counters"]))
+        out["faults"] = int_map(state.get("faults", {}), "faults")
+        fr = state.get("faults_recent", [])
+        if not isinstance(fr, list) or len(fr) > lim["recent_errors"]:
+            bad("faults_recent bound")
+        for r in fr:
+            if (not isinstance(r, dict) or not isinstance(r.get("kind"), str)
+                    or not (r.get("at") is None or is_num(r.get("at")))):
+                bad("faults_recent fields")
+        out["faults_recent"] = [dict(r) for r in fr]
+        unc = state.get("uncertainty")
+        if not isinstance(unc, dict):
+            bad("uncertainty shape")
+        out["uncertainty"] = {}
+        for k, default in self.s["uncertainty"].items():
+            v = unc.get(k, default)
+            if isinstance(default, bool):
+                if not isinstance(v, bool):
+                    bad("uncertainty.%s must be bool" % k)
+            elif not isinstance(v, int) or isinstance(v, bool) or v < 0:
+                bad("uncertainty.%s must be a non-negative int" % k)
+            out["uncertainty"][k] = v
+        obs = state.get("observation")
+        if (not isinstance(obs, dict)
+                or not (obs.get("last_poll_at") is None
+                        or is_num(obs.get("last_poll_at")))
+                or not (obs.get("last_append_at") is None
+                        or is_num(obs.get("last_append_at")))
+                or not isinstance(obs.get("polls"), int)
+                or isinstance(obs.get("polls"), bool) or obs.get("polls") < 0):
+            bad("observation shape")
+        out["observation"] = {"last_poll_at": obs.get("last_poll_at"),
+                              "last_append_at": obs.get("last_append_at"),
+                              "polls": obs["polls"]}
+        return out
 
     # ------------------------------------------------------------- snapshot
 
@@ -287,17 +555,129 @@ class OmpSessionAdapter:
             oldest = next(iter(entries))
             del entries[oldest]
 
-    def _is_live(self, entry_id):
-        """Return "live" | "discarded" | "uncertain" for an entry's ancestry."""
-        entries, discarded = self.s["entries"], set(self.s["discarded"])
-        cur, hops = entry_id, 0
-        while cur is not None and hops < _MAX_ANCESTRY_DEPTH:
+    # ------------------------------------------------------- active chain
+
+    _MISSING = object()
+
+    def _walk_back(self, start):
+        """Walk parent links from `start`.
+
+        Returns (chain, truncated, under_discarded) with chain in root..start
+        order.  Bounded by entries_cap with cycle detection; a discarded
+        ancestor or an evicted/unknown ancestor truncates the walk — history
+        beyond the retained bound is explicitly unknown, never guessed.
+        """
+        entries = self.s["entries"]
+        discarded = set(self.s["discarded"])
+        chain, visited = [], set()
+        truncated = under_discarded = False
+        cur = start
+        while cur is not None:
+            if cur in visited:
+                self._fault("ancestry_cycle")
+                truncated = True
+                break
             if cur in discarded:
-                return "discarded"
-            if cur not in entries:
-                return "uncertain"  # entry/ancestor evicted: no guessing
-            cur, hops = entries[cur], hops + 1
-        return "uncertain" if hops >= _MAX_ANCESTRY_DEPTH else "live"
+                under_discarded = True
+                break
+            visited.add(cur)
+            chain.append(cur)
+            if len(chain) >= self.lim["entries_cap"]:
+                truncated = True
+                break
+            parent = entries.get(cur, self._MISSING)
+            if parent is self._MISSING:
+                truncated = True
+                break
+            cur = parent
+        chain.reverse()
+        return chain, truncated, under_discarded
+
+    def _set_chain(self, chain, truncated, under_discarded):
+        self._chain = chain
+        self._active_set = set(chain)
+        self._chain_truncated = truncated
+        self._chain_under_discarded = under_discarded
+        self.s["head"] = chain[-1] if chain else None
+
+    def _rebuild_chain(self):
+        """Derive the runtime chain from persisted head + entries (load)."""
+        head = self.s["head"]
+        if head is None or head not in self.s["entries"]:
+            self._set_chain([], False, False)
+            return
+        self._set_chain(*self._walk_back(head))
+
+    def _advance_head(self, entry_id, parent):
+        """Track the current active branch as entries stream in.
+
+        Linear appends (parent == head) are O(1); any other parent means a
+        branch switch / tree navigation and the chain is recomputed from the
+        new entry.  Siblings that leave the current head's ancestry are
+        retracted — there is no passive all-nondiscarded-is-active fallback.
+        """
+        if entry_id in self._active_set:
+            return
+        if parent is None:  # new root
+            if entry_id not in set(self.s["discarded"]):
+                self._set_chain([entry_id], False, False)
+                self._retract_offbranch()
+            return
+        if self._chain and parent == self._chain[-1]:
+            self._chain.append(entry_id)
+            self._active_set.add(entry_id)
+            self.s["head"] = entry_id
+            if len(self._chain) > self.lim["entries_cap"]:
+                self._active_set.discard(self._chain.pop(0))
+                self._chain_truncated = True
+                self._retract_offbranch()
+            return
+        chain, truncated, under_discarded = self._walk_back(entry_id)
+        if under_discarded:
+            # a row replayed under a discarded branch never becomes the
+            # active head (and never retracts the legitimate chain)
+            return
+        self._set_chain(chain, truncated, under_discarded)
+        self._retract_offbranch()
+
+    def _chain_state(self, entry_id):
+        """Return "live" | "retired" | "uncertain" for an entry.
+
+        live      — on the current active chain (reachable from head);
+        retired   — known sibling/discarded branch no longer on the active
+                    head (definitely not live);
+        uncertain — beyond the bounded retained chain (entries_cap) or an
+                    unknown id: explicitly unknown, documented, never live.
+        """
+        if entry_id in self._active_set:
+            return "retired" if self._chain_under_discarded else "live"
+        if entry_id in self.s["entries"] and not self._chain_truncated:
+            return "retired"
+        return "uncertain"
+
+    def _retract_offbranch(self):
+        """Drop successes/pending/last_tool no longer on the active chain."""
+        s = self.s
+        ring = s["success_ring"]
+        kept = [r for r in ring if r["entry_id"] in self._active_set]
+        retracted = len(ring) - len(kept)
+        if retracted:
+            s["success_ring"] = kept
+            c = s["counters"]
+            c["successful_assistant"] = max(
+                0, c["successful_assistant"] - retracted)
+            c["discarded_success_retracted"] += retracted
+            s["last_success"] = dict(kept[-1]) if kept else None
+        pending = s["pending"]
+        dead = [k for k, v in pending.items()
+                if v["entry_id"] not in self._active_set]
+        for k in dead:
+            del pending[k]
+        if dead:
+            s["counters"]["pending_retracted"] += len(dead)
+        lt = s["last_tool"]
+        if lt is not None and lt.get("entry_id") not in self._active_set:
+            s["last_tool"] = None
 
     def _record_success(self, entry_id, ts, ts_valid, stop_reason):
         s = self.s
@@ -312,18 +692,6 @@ class OmpSessionAdapter:
         s["counters"]["successful_assistant"] += 1
         s["consecutive_failures"] = 0
 
-    def _retract_successes(self):
-        """Drop successes whose ancestry now resolves to a discarded branch."""
-        ring = self.s["success_ring"]
-        kept = [r for r in ring if self._is_live(r["entry_id"]) != "discarded"]
-        retracted = len(ring) - len(kept)
-        if retracted:
-            self.s["success_ring"] = kept
-            c = self.s["counters"]
-            c["successful_assistant"] = max(0, c["successful_assistant"] - retracted)
-            c["discarded_success_retracted"] += retracted
-            self.s["last_success"] = dict(kept[-1]) if kept else None
-
     def _note_discarded_root(self, root_id):
         d = self.s["discarded"]
         if root_id not in d:
@@ -331,14 +699,22 @@ class OmpSessionAdapter:
             if len(d) > self.lim["discarded_cap"]:
                 del d[: len(d) - self.lim["discarded_cap"]]
                 self.s["uncertainty"]["entries_evicted"] = True
-        self._retract_successes()
+        # if the discarded root sits on the active chain, truncate the chain
+        # at its parent: everything from the root to the old head is dead
+        if root_id in self._active_set:
+            idx = self._chain.index(root_id)
+            self._set_chain(self._chain[:idx], self._chain_truncated, False)
+        self._retract_offbranch()
 
     def _note_error(self, category, error_id, fingerprint, ts, ts_valid):
         s = self.s
         s["error_totals"][category] = s["error_totals"].get(category, 0) + 1
         s["consecutive_failures"] += 1
         safe_id = error_id
-        if isinstance(safe_id, str) and not _SAFE_SMALL.match(safe_id):
+        if isinstance(safe_id, (dict, list)):
+            # structured errorId could carry raw secrets: type fingerprint only
+            safe_id = "id:" + _fp(type(safe_id).__name__)
+        elif isinstance(safe_id, str) and not _SAFE_SMALL.match(safe_id):
             safe_id = "id:" + _fp(safe_id)
         rec = {
             "category": category, "error_id": safe_id,
@@ -350,32 +726,62 @@ class OmpSessionAdapter:
 
     # ------------------------------------------------------------ row parsing
 
+    def _sniff_oversized_envelope(self, head):
+        """Record id/parent of a skipped oversized row (row head only).
+
+        Keeps descendants' ancestry resolvable without parsing, buffering,
+        or persisting the oversized payload.  Ids failing the safe pattern
+        simply never match, and the descendants then resolve to the
+        documented explicit-unknown state.
+        """
+        head = head[:_SNIFF_HEAD]
+        m = _SNIFF_ID.search(head)
+        if not m:
+            return
+        entry_id = m.group(1).decode("ascii")
+        pm = _SNIFF_PARENT.search(head)
+        parent = pm.group(1).decode("ascii") if (pm and pm.group(1)) else None
+        if self._note_seen(entry_id):
+            self._note_entry(entry_id, parent)
+            self._advance_head(entry_id, parent)
+            self.s["counters"]["oversized_envelope_recorded"] += 1
+
     def _handle_line(self, line, now):
         line = line.rstrip(b"\r")
         if not line.strip():
             return
         if len(line) > self.lim["max_row_bytes"]:
+            # genuinely larger than the bound: fail closed (payload never
+            # parsed/persisted) but keep ancestry resolvable via the
+            # envelope head sniff
             self._fault("oversized_row")
+            self._sniff_oversized_envelope(line)
             return
         try:
             ev = json.loads(line.decode("utf-8"))
-        except (ValueError, UnicodeDecodeError):
+        except (ValueError, UnicodeDecodeError, RecursionError):
             self._fault("malformed_row")
             return
         if not isinstance(ev, dict):
             self._fault("malformed_row")
             return
-        entry_id, etype, raw_ts = ev.get("id"), ev.get("type"), ev.get("timestamp")
+        etype = ev.get("type")
+        if (etype in ENVELOPELESS_SERVICE_TYPES
+                and "id" not in ev and "parentId" not in ev):
+            # Known envelopeless service metadata (e.g. the leading title
+            # row): non-progress, no fault, not deduped/chained (no id).
+            self.s["counters"]["service_events"] += 1
+            return
+        entry_id, raw_ts = ev.get("id"), ev.get("timestamp")
         if (not isinstance(entry_id, str) or not _SAFE_ID.match(entry_id)
                 or not isinstance(etype, str) or not etype):
             self._fault("unknown_shape")
             return
+        # absent parentId == root row (real OMP session headers omit it)
         parent = ev.get("parentId")
         if parent is not None and not _SAFE_ID.match(parent):
             self._fault("unknown_shape")
             parent = None
-        if "parentId" not in ev:
-            self._fault("unknown_shape")
         ts, ts_valid, why = _parse_ts(raw_ts, now, self.lim["allowed_skew"])
         if not ts_valid:
             self._fault("invalid_timestamp")
@@ -383,6 +789,7 @@ class OmpSessionAdapter:
             self.s["counters"]["duplicates"] += 1
             return
         self._note_entry(entry_id, parent)
+        self._advance_head(entry_id, parent)
         if self.s["session_fault"]:
             self.s["counters"]["skipped_schema_fault"] += 1
             return
@@ -431,7 +838,7 @@ class OmpSessionAdapter:
         if role == "assistant":
             self._handle_assistant(msg, entry_id, ts, ts_valid)
         elif role == "toolResult":
-            self._handle_tool_result(msg, ts, ts_valid)
+            self._handle_tool_result(msg, entry_id, ts, ts_valid)
         elif role in NON_PROGRESS_ROLES:
             s["counters"]["service_events"] += 1  # user/system/etc: no progress
         else:
@@ -442,8 +849,12 @@ class OmpSessionAdapter:
         s = self.s
         stop, err_id = msg.get("stopReason"), msg.get("errorId")
         err_msg = msg.get("errorMessage")
-        for part in self._tool_call_parts(msg):
-            self._register_pending(part, entry_id, ts, ts_valid)
+        # toolCalls on a failed/aborted assistant never execute — registering
+        # them would create eternally running pending tasks
+        failed = err_id is not None or stop in ("error", "aborted")
+        if not failed:
+            for part in self._tool_call_parts(msg):
+                self._register_pending(part, entry_id, ts, ts_valid)
         if err_id is not None or stop == "error":
             fp = _fp(err_msg) if isinstance(err_msg, str) else None
             self._note_error("assistant_error", err_id, fp, ts, ts_valid)
@@ -452,12 +863,17 @@ class OmpSessionAdapter:
             self._note_error("assistant_aborted", None, None, ts, ts_valid)
             s["counters"]["failed_assistant"] += 1
         elif stop in ("stop", "toolUse"):
-            state = self._is_live(entry_id)
-            if state == "discarded":
+            state = self._chain_state(entry_id)
+            if state == "retired":
                 s["counters"]["discarded_branch_events"] += 1
             elif state == "uncertain":
                 s["uncertainty"]["ancestry_uncertain"] += 1
                 self._fault("ancestry_uncertain")
+            elif not ts_valid:
+                # invalid/future ts is never proof of the last successful
+                # semantic event; observable only as a counter
+                s["counters"]["success_invalid_ts"] += 1
+                s["consecutive_failures"] = 0
             else:
                 self._record_success(entry_id, ts, ts_valid, stop)
         else:
@@ -475,7 +891,7 @@ class OmpSessionAdapter:
 
     def _register_pending(self, part, entry_id, ts, ts_valid):
         tcid = part.get("id")
-        if not isinstance(tcid, str) or not tcid:
+        if not isinstance(tcid, str) or not _SAFE_ID.match(tcid):
             self._fault("unknown_shape")
             return
         name_class, safe_name = _classify_tool_name(part.get("name"))
@@ -490,17 +906,24 @@ class OmpSessionAdapter:
             "started": False, "ts": ts, "ts_valid": ts_valid, "entry_id": entry_id,
         }
 
-    def _handle_tool_result(self, msg, ts, ts_valid):
+    def _handle_tool_result(self, msg, entry_id, ts, ts_valid):
         s = self.s
         tcid = msg.get("toolCallId")
-        if not isinstance(tcid, str) or not tcid:
+        if not isinstance(tcid, str) or not _SAFE_ID.match(tcid):
             self._fault("unknown_shape")
             return
         name_class, safe_name = _classify_tool_name(msg.get("toolName"))
-        is_error = msg.get("isError") is True
+        is_error = msg.get("isError")
+        if not isinstance(is_error, bool):
+            # missing/wrong-typed isError is explicitly UNKNOWN, never a
+            # success signal for the watcher
+            is_error = None
+            self._fault("unknown_tool_result")
+            s["uncertainty"]["unknown_seen"] = True
         rec = {
             "tool_call_id": tcid, "name": safe_name, "name_class": name_class,
             "is_error": is_error, "ts": ts, "ts_valid": ts_valid,
+            "entry_id": entry_id,
         }
         s["last_tool"] = rec
         s["counters"]["tool_results"] += 1
@@ -511,15 +934,19 @@ class OmpSessionAdapter:
             self._note_error("tool_error", None, None, ts, ts_valid)
 
     def _handle_custom(self, ev):
-        name = _walk_for(ev, "name") or _walk_for(ev, "event")
-        if name == "tool_execution_start":
-            tcid = _walk_for(ev, "toolCallId")
+        # Verified against real OMP v3 logs: custom rows carry `customType`
+        # + `data` (tool_execution_start -> data.toolCallId; session_exit).
+        # Strict match only — no guessed name-only fallbacks.
+        if ev.get("customType") == "tool_execution_start":
+            data = ev.get("data")
+            tcid = data.get("toolCallId") if isinstance(data, dict) else None
             rec = self.s["pending"].get(tcid) if isinstance(tcid, str) else None
             if rec is not None:
                 rec["started"] = True
             else:
                 self._fault("unknown_tool_result_ref")
-            # never semantic progress: service event by contract
+        # custom events (incl. session_exit / unknown customTypes) are
+        # non-progress service metadata by contract
         self.s["counters"]["service_events"] += 1
 
     def _handle_branch(self, ev):
@@ -568,7 +995,9 @@ class OmpSessionAdapter:
                 break
             if (not s["skip_mode"] and b"\n" not in self._tail
                     and len(self._tail) > lim["max_row_bytes"]):
-                # unterminated row already oversized: drop it, never buffer it
+                # unterminated row already oversized: drop it, never buffer
+                # it; the tail so far is the row head -> envelope sniff
+                self._sniff_oversized_envelope(self._tail)
                 s["skip_mode"] = True
                 self._tail = b""
                 self._fault("oversized_row")
