@@ -177,6 +177,12 @@ The skill is a coordinator contract for one development campaign:
 - **Loops with evidence-based escalation**: no fixed iteration cap while evidence shows
   progress; non-convergence is an evidence-based pause (identical failure fingerprints,
   oscillating fixes, model cycling, scope growth, missing capability), not a counter.
+- **Bounded execution attempts (procedural)**: each attempt runs under an approved
+  budget (default 35 minutes from actual launch, checkpoint inspection at 20 minutes,
+  at most one scoped steer, max two unproductive attempts per slice before an approved
+  fallback or pause); budget expiry settles the attempt with partial work preserved —
+  never a permanent FAIL, never auto-acceptance. Enforcement is coordinator procedure,
+  not an observer-script flag.
 - **Durable state**: canonical `STATE.json` (schema 2: campaign lifecycle plus planning
   and execution session records)/`TODO.md`/`EVENTS.jsonl`/evidence under the campaign
   directory; the coordinator polls every active session on a **ten-minute cadence only
@@ -230,14 +236,16 @@ skills/autonomous-campaign-development/
 │   ├── TASK.md                              # per-task file template
 │   ├── HANDOFF.md                           # execution handoff + manifest shape
 │   ├── TODO.md                              # campaign TODO template
-│   └── STATE.json                           # campaign state template (schema 2)
+│   ├── STATE.json                           # campaign state template (schema 2)
+│   └── WATCH.json                           # observer config template (schema_version 1)
 └── scripts/                                 # optional observer utility (v1.1.0)
     ├── omp_events.py                        # metadata-only OMP session log adapter
     └── campaign_watch.py                    # deterministic progress watcher CLI
 ```
 
-A `templates/WATCH.json` (watchdog config) is planned but intentionally not shipped
-until its schema is aligned with `scripts/campaign_watch.py`; see
+`templates/WATCH.json` mirrors the implemented `campaign_watch.py` config schema;
+replace its `/path/to/...` placeholders and `registered_at` before first use. Command
+surface, validation rules, and known constraints:
 `references/progress-watchdog.md`.
 
 ## Customization and porting

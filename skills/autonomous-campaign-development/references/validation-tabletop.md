@@ -68,6 +68,14 @@ the text instructs at each step. Expected outcomes below are the pass criteria.
 | 29 | `branch_summary` discarded-entry-branch records replayed/dropped work | Discarded branch is not progress; only the live parent branch counts |
 | 30 | Watchdog process restarted mid-campaign | Per-task ages persist via sidecar state; no reset to zero; canonical STATE/TODO/EVENTS untouched |
 | 31 | Watchdog sidecar/output inspected for leakage | Only structural metadata and aggregated fingerprints; no raw messages, tool args, secrets, or output blowup |
+| 32 | SSE/log metadata churn, empty verdict shell, watcher restart, or coordinator restart mid-attempt | Attempt budget clock does NOT reset; `attempt.started_at` recorded in state stands; only a genuinely new scoped attempt starts a new budget |
+| 33 | Reviewer writes a partial verdict document, exits rc=0, or hits budget expiry | Not PASS: only a complete explicit verdict for the expected snapshot counts; the skeleton's existence/mtime is not progress - substantive completed criteria with evidence are; incremental skeleton updates are the useful signal |
+| 34 | Attempt reaches the 35-minute budget without completion | Scoped settle: fence the writer, preserve partial work + logs, shorten the brief, restart scoped; not a permanent feature FAIL, never auto-acceptance |
+| 35 | Two unproductive provider attempts on the same slice vs substantive review FAIL/fix cycles | No blind third same-route retry: approved fallback for this task/attempt or pause with evidence/options; substantive test/fix/review cycles keep no fixed limit while evidence shows progress; useful FAILs with fixable findings are productive |
+| 36 | Build/test legitimately exceeds the default attempt budget | Allowed only under a predeclared bounded phase deadline recorded before launch with real completion/checkpoint evidence; retroactive or open-ended extensions refused |
+| 37 | Remediation wants a different or heavier model mid-campaign | Only the approval-bound fallback (and optional final-review) model may be used; any other switch pauses for explicit user approval |
+| 38 | Watchdog output looks wrong mid-campaign | Report unknown, apply the declared attempt budget, continue with the packaged observer or bounded manual status as shipped; watcher improvement becomes a separate maintenance task - no mid-execution edits |
+| 39 | Agent dispatched hidden/headless; `terminal focus` returns `navigated:false` | Not treated as user-visible: verify discoverability/link, disclose to the user, bind handles + session identity, no duplicate writer when moving UI |
 
 ## Recording results
 

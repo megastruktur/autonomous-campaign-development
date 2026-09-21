@@ -38,6 +38,7 @@ decisions and clarifications: link the PLAN section, do not re-paste the transcr
 | Coding | {{requested_or_default}} | {{resolved_id}} |
 | Fallback | {{requested_or_default_or_none}} | {{resolved_id_or_none}} |
 | Reviewer | {{requested_or_default}} | {{resolved_id}} |
+| Final-review (optional) | {{requested_or_default_or_none}} | {{resolved_id_or_none}} |
 
 ## Permissions
 
@@ -57,8 +58,13 @@ Prerequisites: {{prereqs_or_null}}. Known blockers: {{blockers_or_null}}.
 
 - Polling cadence while active: every 10 minutes across every active session; progress
   semantics per [../references/progress-watchdog.md](../references/progress-watchdog.md).
+- Execution policy (approved): attempt budget {{2100_or_override}}s per attempt from
+  actual launch (never reset by transport activity, watcher/coordinator restarts, or
+  metadata churn); checkpoint due at {{1200_or_override}}s (at most ONE scoped steer);
+  max {{2_or_override}} unproductive attempts per slice, then approved fallback or
+  pause. Predeclared long-job extensions: {{none_or_list}}.
 - Optional watchdog: {{intent_and_config_pointer_or_none}} (observer-only; never
-  authoritative).
+  authoritative; budget enforcement stays with the coordinator, not the scripts).
 - Remediation ladder: [../references/state-and-recovery.md](../references/state-and-recovery.md#remediation-and-non-convergence).
 
 ## Exact START prompt

@@ -2,7 +2,7 @@
 
 Liveness wording is strict here because weak wording has caused false health calls:
 transport or process activity, model responses, and task completion are three different
-things. This reference defines what counts as each, and the planned contract of the
+things. This reference defines what counts as each, and the actual contract of the
 optional observer scripts. The scripts never run on their own and are never required by
 the procedure - the coordinator can apply the same semantics manually.
 
@@ -89,20 +89,152 @@ kill it. A live long-running command within its deadline is not a stall.
   smoke route does not prove long-stream stability - budget long scenarios explicitly.
   A hard output token cap is only set through options actually verified to exist.
 
-## Planned observer CLI (contract pending final alignment)
+## Observer CLI (actual contract, aligned with `scripts/campaign_watch.py`)
 
 Two Python 3 standard-library-only scripts ship with this skill (release 1.1.0):
 `scripts/omp_events.py`, a metadata-only incremental OMP session-JSONL adapter, and
-`scripts/campaign_watch.py`, the deterministic watcher CLI. Documented command surface:
-`poll --config PATH` (one bounded sample), `watch --config PATH` (30s local polls, 300s
-periodic heartbeat, transitions reported immediately), `status --config PATH [--task ID]`
-(reads the snapshot; output is one JSON object of at most 1024 UTF-8 bytes),
-`diagnose --config PATH [--task ID]` (separately bounded). These flags are the planned
-contract; the exact final flag set and the config file schema are validated against the
-implementation before release - do not script against undocumented flags or fields.
+`scripts/campaign_watch.py`, the deterministic watcher CLI. The command surface below is
+the implemented one; do not script against flags or fields not listed here.
 
-The config file (future `templates/WATCH.json`) expresses, per watched task: task and
-attempt identity, session identity, phase, session log path, optional trusted process
-identity, scoped checkpoint paths with deadlines, and thresholds. The template is
-deliberately deferred until the schema is aligned with `scripts/campaign_watch.py`;
-hand-writing configs against an unpublished schema is prohibited.
+```
+campaign_watch.py poll     --config PATH             one bounded sample, writes sidecars
+campaign_watch.py watch    --config PATH             poll loop: initial poll line, then
+                                                     change lines (immediate) + heartbeat
+campaign_watch.py status   --config PATH [--task T]  cached snapshot, stale check
+campaign_watch.py diagnose --config PATH [--task T]  cached per-task detail
+```
+
+- Every output is ONE JSON line on stdout. `status`/heartbeat lines are ALWAYS
+  <=1024 UTF-8 bytes including the newline; `diagnose`/`poll` lines are <=4096 bytes
+  (as implemented - a smaller poll budget was a goal, not a promise). Change lines are
+  terse: `{"v":1,"kind":"change","at":...,"task":...,"from":"h/a","to":"h/a","reason":...}`.
+  Over-capacity task lists are truncated to a stable task-sorted prefix with an
+  `omitted` count; `counts` always covers ALL tasks; JSON is never broken.
+- Errors are safe JSON: `{"v":1,"kind":"error","error":CODE}` with exit code 2 -
+  codes `config_unreadable`, `config_invalid`, `state_corrupt`, `no_snapshot`,
+  `config_changed`, `observer_locked`, `task_unknown`, `internal`. No tracebacks, host
+  paths, or secret strings ever appear. `--help` is normal argparse.
+- `status`/`diagnose` are read-only (no lock, no writes); a snapshot older than
+  `stale_seconds` is reported with every health forced to `unknown`
+  (`reason: stale_snapshot`). Editing the config after a poll yields `config_changed`
+  until the next poll.
+
+### Config file (`templates/WATCH.json`, schema_version 1)
+
+The shipped template is valid JSON and copies the documented defaults, but it is NOT
+runnable as-is: replace every `/path/to/...` path and the `registered_at` placeholder
+before the first run. The CLI validates strictly and rejects a placeholder config with
+`config_invalid`; unknown extra keys are dropped at load, so the replacement legend
+lives here, not in the JSON. All interval keys and `repeat_error_count` are REQUIRED -
+the code applies no defaults; the values below are the template's defaults:
+
+- `poll_seconds` 30, `heartbeat_seconds` 300, `stale_seconds` 120,
+  `no_step_seconds` 600, `retry_window_seconds` 600: positive floats <=86400
+  (fractional allowed).
+- `repeat_error_count` 3: integer 1..100.
+- `sidecar_dir`: absolute path, <=512 chars. The campaign root is
+  `dirname(sidecar_dir)`; checkpoint/artifact allowlists must resolve inside it.
+- `tasks`: 1..1024 entries; excess is REJECTED (`config_invalid`), never silently
+  ignored. Per task:
+  - `task`, `attempt`: ids matching `^[A-Za-z0-9][A-Za-z0-9_.\-]{0,127}$`, unique per
+    config. `phase` optional (same charset, <=64).
+  - `session_log`: absolute path to the OMP session JSONL, <=512 chars.
+  - `session_id`: null = capture and persist the first valid session header; a later
+    change is rejected as `session_changed` (health `unknown`) unless the attempt label
+    changed.
+  - `registered_at`: REQUIRED ISO-8601 UTC, not in the future. Its first-sight value
+    persists: later config edits and attempt-label changes cannot mint a new no-step
+    baseline.
+  - `candidate`: null or an opaque string <=256 chars, matched against checkpoints.
+  - `checkpoint_files`/`artifact_files`: optional explicit allowlists, <=64 absolute
+    entries each, no symlinks, must resolve under the campaign root; violations are
+    `config_invalid`.
+  - `tool_deadline_seconds`: REQUIRED, positive float <=604800.
+  - `process`: null or `{"pid":int,"start_ticks":int,"boot_id":str}` - a Linux /proc
+    identity (starttime field 22 + boot_id). Unsupported platform or inaccessible proc
+    => `unknown`, NEVER `exited`. boot_id mismatch (pre-reboot) or start_ticks
+    mismatch (PID reuse) => `exited`. An omitted process does not override JSONL
+    semantics.
+
+### No-step age vs semantic progress vs artifact signals
+
+Keep these separate when reading output:
+
+- `no_step_age` is the age of the last valid successful assistant event (genuine event
+  timestamp, else `registered_at`). It drives `suspect_stall`/`confirmed_retry_loop`.
+  Failed tool results never refresh it; `live:false` successes anchor age by their
+  genuine event ts but manufacture no NOW progress; retracted-branch successes are
+  dropped by the adapter.
+- `last_progress_at` moves ONLY on a confirmed structured checkpoint (below). Nothing
+  else sets it.
+- Artifact diffs (sha256+size, <=1MiB/file) are candidate signals only, surfaced as
+  `artifacts_changed`; unreadable or oversized files become `artifact_unverifiable`
+  uncertainty, not success. There is no code-growth-only progress detector.
+
+### Structured checkpoints (producer attestation, not truth)
+
+`{schema_version:1,task,attempt,session_id,candidate,checkpoint_id,completed_at,kind,
+verified:true}` with kind `runtime_scenario|review_checkpoint|artifact_checkpoint`.
+Identity must match task/attempt/bound-session/candidate; same id or older ts is a
+replay and ignored; a confirmed checkpoint is monotonic across restarts and attempts.
+`verified:true` is the producer's attestation only - the watcher does not verify the
+underlying claim. Checkpoint files are read-only inputs; the producer (executor or
+reviewer per procedure) writes them, the watcher never does.
+
+### Sidecar files (the ONLY writes)
+
+The scripts write only inside `sidecar_dir` - never STATE/TODO/EVENTS, session logs, or
+sources: `state.json` (baselines, adapter cursors, confirmed checkpoints, removed-task
+ring <=128, transition journal <=256 metadata-only; atomic replace; corruption =>
+`state_corrupt` with the file untouched, baselines kept), `snapshot.json` (`written_at`,
+`config_digest`, task views; atomic), `observer.lock` (fcntl flock, non-blocking,
+single writer for poll/watch, crash-safe; status/diagnose take no lock). Removed tasks
+are pruned from the snapshot but their baseline (registered_at/session/checkpoint)
+resumes on re-add: pruning and re-adding or relabeling an attempt cannot reset the
+no-progress budget.
+
+### Run workflow
+
+1. Copy `templates/WATCH.json`, replace paths, `registered_at`, and task/session
+   identity for the tasks to watch.
+2. Run one `poll --config PATH`; expect one JSON line per run, health per task.
+3. Check `status --config PATH` (compact) and `diagnose --config PATH --task T`
+   (detail) as needed.
+4. For continuous watching, run `watch --config PATH` as an explicitly owned,
+   supervised background process: decide who owns it and how it is supervised BEFORE
+   starting it. A background watcher does not wake a sleeping coordinator TUI and
+   sends no notifications by itself; it only prints lines. It is a reporter, not a
+   scheduler.
+
+Nothing auto-starts: the scripts run only when explicitly invoked.
+
+### Known constraints and open concerns (accurate as of CLI commit e080ba1)
+
+- `observer.lock` uses fcntl flock: POSIX only.
+- The process probe is Linux-only (/proc) and works only in the same PID namespace;
+  elsewhere process and activity stay `unknown`.
+- OPEN CONCERN: the current source labels activity `generating` when a validated live
+  process exists and no ask/tool is pending - a live PID alone cannot prove the model
+  is generating. Coordinator review must fix or relabel this before release; do not
+  treat `generating` as proof of model activity.
+- OPEN CONCERN: checkpoint `completed_at` currently tolerates up to 300s of future
+  skew; the desired policy is no future actual progress at all. Flagged to the
+  coordinator for correction.
+- Retry-loop confirmation needs adapter error fingerprints; runtimes that never emit
+  them can at most reach `suspect_stall`.
+- Invalid, corrupt, stale, rotated, or truncated input fails safe to `unknown`;
+  bounded parent history (removed ring <=128, journal <=256) is explicit.
+- Validation status: exercised against adapter fixtures (adapter 919e864,
+  simple-envelope). A real-session integration check against the corrected adapter is
+  still required before relying on classification against live OMP sessions; no
+  real-session PASS is claimed here.
+
+### Relationship to the attempt budget (procedural, not CLI)
+
+The watchdog's numerical thresholds (`no_step_seconds`, `retry_window_seconds`,
+`stale_seconds`) are DIAGNOSIS triggers only. The campaign's attempt budget
+(`attempt_budget_seconds`, default 2100; see SKILL.md section 10 and
+[state-and-recovery.md](state-and-recovery.md)) is a separate hard procedural cap
+enforced by the coordinator/runtime through scoped control - never by the observer,
+which never kills, nudges, or remediates. The observer has no CLI flags or config
+options for budget enforcement; that enforcement is procedure, not code.

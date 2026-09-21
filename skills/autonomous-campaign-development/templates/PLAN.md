@@ -30,9 +30,12 @@
 | Coding model | {{requested_or_default}} | {{resolved_id}} | {{yes/no}} |
 | Fallback model | {{requested_or_default_or_none}} | {{resolved_id_or_none}} | {{yes/no}} |
 | Reviewer model | {{requested_or_default}} | {{resolved_id}} | {{yes/no}} |
+| Final-review model (optional) | {{requested_or_default_or_none}} | {{resolved_id_or_none}} | {{yes/no}} |
 
 `default` = the runtime/profile's actual configured default. Verify the actual startup
-model of every agent; never silently substitute an unapproved model.
+model of every agent; never silently substitute an unapproved model. The optional
+final-review row pins a heavyweight model for exact-head final reviews; it is the
+user's choice, never a hard-coded requirement.
 
 ## Task DAG
 
@@ -70,6 +73,21 @@ Sibling tasks consume these contracts as-is; they never redesign them independen
 
 Every command below was actually verified to exist on target (how): {{verification}}
 
+## Execution policy (bounded attempts)
+
+- `attempt_budget_seconds`: 2100 (35 min default per execution attempt; starts at
+  actual attempt launch, never resets on transport activity, watcher/coordinator
+  restarts, or metadata churn)
+- `checkpoint_due_seconds`: 1200 (20 min: inspect progress evidence; at most ONE
+  scoped steer)
+- `max_unproductive_attempts`: 2 (no blind third same-route retry on the same slice)
+- Extensions: {{none_or_predeclared_per_task_long_job_budgets}} - only explicit,
+  predeclared, task-specific measured long-job budgets (for example a known long
+  build/test phase with a bounded deadline); no retroactive or open-ended extensions.
+- Enforcement is procedural (coordinator/runtime scoped control), not an automated
+  flag in the observer scripts. A budgeted stop settles the attempt; it is NOT a
+  permanent feature FAIL.
+
 ## Approval record (the single WHAT gate)
 
 - Approved by: {{user}} on {{date}}
@@ -78,6 +96,8 @@ Every command below was actually verified to exist on target (how): {{verificati
 - Final merge strategy to target: `--no-ff` (default) - change only with user decision.
 - Push/publication/deployment: NOT authorized by this approval (separate permission).
 - Non-convergence policy: evidence-based pause (default) - configured overrides: {{none/listed}}
+- Execution policy: attempt budget 2100s / checkpoint due 1200s / max 2 unproductive
+  attempts (defaults) - configured overrides or predeclared extensions: {{none/listed}}
 - Approval is NOT START: it authorizes what may happen, not that execution begins.
   After this record, the planning session writes `{{prefix}}_HANDOFF.md` and
   `{{prefix}}_MANIFEST.json`, sets state lifecycle `awaiting_fresh_session_start`, and

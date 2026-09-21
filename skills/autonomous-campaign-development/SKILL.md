@@ -73,14 +73,18 @@ fixed-wave barriers.
 
 ### 3. Model questionnaire
 
-Before development, ask once: coding model, fallback model, independent reviewer model.
-Each answer is `default` (the relevant runtime/profile's actual configured default - never
-an orchestrator-chosen stand-in) or an exact available ID; fallback may additionally be
-none. Record requested AND resolved IDs, verify the actual startup model of every agent,
-and pin resolved defaults for reproducibility after restart unless the user changes them.
-With no fallback: same-model session repair is allowed; a failure requiring another
-provider or model pauses for user input. Never silently pick an unapproved model, never
-print credentials. Mechanics: [references/hermes-orca-omp.md](references/hermes-orca-omp.md).
+Before development, ask once: coding model, fallback model, independent reviewer model,
+and optionally a heavyweight final-review model for exact-head final reviews. Each
+answer is `default` (the relevant runtime/profile's actual configured default - never
+an orchestrator-chosen stand-in) or an exact available ID; fallback and final-review
+may additionally be none. Record requested AND resolved IDs, verify the actual startup
+model of every agent, and pin resolved defaults for reproducibility after restart
+unless the user changes them. Never hardcode specific vendor models into the plan
+(neither for wave execution nor for final review); a heavyweight final-review model is
+the user's explicit choice, not a requirement. With no fallback: same-model session
+repair is allowed; a failure requiring another provider or model pauses for user
+input. Never silently pick an unapproved model, never print credentials. Mechanics:
+[references/hermes-orca-omp.md](references/hermes-orca-omp.md).
 
 ### 4. One approval gate (WHAT)
 
@@ -159,7 +163,16 @@ progress, and neither is completion - keep last observed, last successful assist
 last completed tool (errors separate), and last semantic progress distinct; only
 explicit structured checkpoints are semantic progress; unknown is reported as unknown,
 never healthy. The bundled observer scripts are optional, observer-only helpers, never
-authoritative and never mutating. Semantics and CLI contract:
+authoritative and never mutating. USE the packaged observer or bounded manual status
+checks as shipped: do not keep editing or rebuilding watchers during execution - if
+monitoring is uncertain, report unknown and apply the declared attempt budget
+(section 10), and spin watcher improvements off as a separate maintenance task.
+Execution stays visible: dispatch agents as interactive OMP TUIs in ordinary Orca
+worktree tabs, not hidden background (`-p`) runs, by default; if the user explicitly
+approves a headless run, verify the session is discoverable/linkable and disclose it
+to the user - a `terminal focus` result of `navigated:false` is not proof the user can
+see anything. Bind terminal handles and session identities, and never leave a
+duplicate writer behind when moving an agent between UIs. Semantics and CLI contract:
 [references/progress-watchdog.md](references/progress-watchdog.md). Schema, crash
 windows, resume and remediation: [references/state-and-recovery.md](references/state-and-recovery.md).
 
@@ -174,8 +187,36 @@ unrelated branches continue) on a repeated identical failure fingerprint with no
 measurable progress after materially different attempts, oscillating fixes/reverts, model
 cycling without diagnosis, growing out-of-scope diff, contradictory requirements,
 unavailable capability, or risk to user data - presenting evidence, attempts, hypothesis,
-and options. Numerical thresholds, if configured, only trigger diagnosis. An operator
-pause is never self-resumed. Rules: [references/state-and-recovery.md](references/state-and-recovery.md#remediation-and-non-convergence).
+and options. An operator pause is never self-resumed.
+
+Every execution attempt runs under the approved bounded-attempt policy (defaults in
+`execution_policy`; record per-attempt start in `tasks[].attempt`):
+
+- The attempt budget (`attempt_budget_seconds`, default 2100 = 35 min) starts at ACTUAL
+  attempt launch and never resets on SSE/IO/log metadata churn, an empty verdict shell,
+  repeated reads, or a watchdog or coordinator restart. Tool success alone is not a
+  useful artifact.
+- At `checkpoint_due_seconds` (default 1200 = 20 min), inspect progress evidence and
+  issue at most ONE scoped steer if needed - never queue redundant nudges.
+- At budget expiry, settle the attempt: either complete the deliverable and verify it,
+  or stop/fence the writer, preserve partial work and logs, shorten the brief, and
+  restart scoped. A budgeted stop is NOT a permanent feature FAIL and never an automatic
+  acceptance.
+- Longer builds/tests may run only under a PREDECLARED bounded phase deadline recorded
+  before launch, backed by real completion/checkpoint evidence - no retroactive or
+  open-ended sliding budgets.
+- Waiting on human input means pause with no automatic retry.
+- After two UNPRODUCTIVE executions of the same slice, never blindly retry the same
+  route a third time: use the approved fallback for THIS task/attempt, else pause with
+  concise evidence and options. A useful review FAIL with fixable findings is a
+  productive outcome, not an unproductive provider attempt; the NO FIXED LIMIT rule for
+  substantive test/fix/review cycles stands while evidence shows progress.
+- Two distinct numerical regimes do not conflict: the observer's thresholds
+  (`no_step_seconds` etc.) only trigger DIAGNOSIS, while the approved attempt budget is
+  a hard procedural cap enforced by the coordinator/runtime through scoped control -
+  never by the observer scripts, which have no enforcement flags.
+
+Rules: [references/state-and-recovery.md](references/state-and-recovery.md#remediation-and-non-convergence).
 
 ### 11. End of campaign
 
@@ -202,6 +243,19 @@ separately approved; merge is not user delivery. Endgame and cleanup contract:
   to a specific session without correlation.
 - Treating the optional observer as a scheduler, killer, or authoritative health
   source; it only reports, and stale/unknown observations stay unknown.
+- Editing or rebuilding the observer scripts mid-campaign instead of using them as
+  shipped; monitoring uncertainty is reported as unknown and governed by the declared
+  attempt budget, and watcher work becomes a separate maintenance task.
+- Letting an attempt run unbounded: transport churn, empty verdict shells, repeated
+  reads, or watcher/coordinator restarts never reset the attempt budget clock.
+- Treating a budgeted stop as a permanent feature FAIL, or extending a long job
+  retroactively instead of predeclaring a bounded phase deadline.
+- Blindly retrying the same route after two unproductive attempts on the same slice,
+  or confusing substantive review FAIL/fix cycles (no fixed limit while progress is
+  evidenced) with unproductive provider attempts.
+- Dispatching agents as hidden background runs the user cannot see; `terminal focus`
+  with `navigated:false` is not proof of visibility, and moving an agent between UIs
+  without rebinding handles/session risks duplicate writers.
 - A green unit suite is not a working feature; mock-only or unexecuted real integration is
   never "verified". A passing rerun does not make a failing acceptance run "flaky".
 - A commit arriving is not "feature done": wait for the executor's explicit ready handoff,

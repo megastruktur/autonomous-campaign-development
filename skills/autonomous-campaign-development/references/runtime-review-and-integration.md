@@ -49,6 +49,16 @@ Reviewer rules:
   acceptance / API / correctness / security. Shell rc=0, a terminated review process, or
   an empty response is NOT a verdict - re-commission until a complete verdict for the
   expected snapshot exists.
+- Incremental verdict discipline: after minimal intake of the frozen snapshot, the
+  reviewer's FIRST MUTATING tool call writes a compact verdict skeleton OUTSIDE the
+  frozen source tree (in its evidence slot): status `IN_PROGRESS`, the candidate
+  commit/tree binding, and the scope/checklist. As criteria complete, the reviewer
+  updates it incrementally with completed criteria and evidence links. The skeleton,
+  its mtime, or comments alone are NOT a useful progress checkpoint - a checkpoint
+  requires a substantive completed criterion with evidence. A partial document, shell
+  rc=0, or attempt-budget expiry is never PASS. Keep the final verdict short with links
+  to evidence - no gigantic single-tool writes. Writing verdict/evidence files is
+  allowed while the code and source remain read-only.
 - No edits, commits, merges, pushes, or automatic fixes - not even a temporary edit of
   the reviewed tree. The reviewer may PROPOSE source-mutating probes (negative controls,
   mutation-sensitive checks); the EXECUTOR runs them in a disposable isolated copy,
