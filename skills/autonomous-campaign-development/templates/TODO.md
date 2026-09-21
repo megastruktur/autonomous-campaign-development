@@ -5,6 +5,17 @@
 > removal, never promises. If no todo-list tool exists, this file on disk is the
 > operational checklist. Rebuild from state after any restart.
 
+## Start gates (once per campaign)
+
+- [ ] plan approved (single WHAT gate - approval is NOT execution start)
+- [ ] `{{prefix}}_HANDOFF.md` + `{{prefix}}_MANIFEST.json` written; manifest sha256 in state
+- [ ] planning session STOPPED (no execution worktrees or agents were created)
+- [ ] explicit START by the user in a distinct fresh session; manifest validated;
+      start recorded in state (lifecycle `executing`)
+
+<!-- Resumes of an already-started campaign skip these gates; the recorded start and
+approval remain bound. -->
+
 ## Tasks
 
 ### {{prefix}}-{{task_name}} - stage: {{stage}}

@@ -70,7 +70,7 @@ Sibling tasks consume these contracts as-is; they never redesign them independen
 
 Every command below was actually verified to exist on target (how): {{verification}}
 
-## Approval record (the single gate)
+## Approval record (the single WHAT gate)
 
 - Approved by: {{user}} on {{date}}
 - Authorized scope: scoped development, tests, independent reviews, task squash merges,
@@ -78,8 +78,16 @@ Every command below was actually verified to exist on target (how): {{verificati
 - Final merge strategy to target: `--no-ff` (default) - change only with user decision.
 - Push/publication/deployment: NOT authorized by this approval (separate permission).
 - Non-convergence policy: evidence-based pause (default) - configured overrides: {{none/listed}}
+- Approval is NOT START: it authorizes what may happen, not that execution begins.
+  After this record, the planning session writes `{{prefix}}_HANDOFF.md` and
+  `{{prefix}}_MANIFEST.json`, sets state lifecycle `awaiting_fresh_session_start`, and
+  STOPS. Execution starts only on an explicit START in a distinct fresh coordinator
+  session bound to the manifest
+  ([../references/handoff-and-start.md](../references/handoff-and-start.md)). No new
+  per-task human gates are introduced by this boundary.
 
 ## Artifacts
 
 State: `plans/{{campaign_name}}/{{prefix}}_STATE.json` | TODO: `{{prefix}}_TODO.md` |
 Events: `{{prefix}}_EVENTS.jsonl` | Evidence: `{{prefix}}_evidence/` | Report: `{{prefix}}_REPORT.md`
+| Handoff: `{{prefix}}_HANDOFF.md` | Manifest: `{{prefix}}_MANIFEST.json`

@@ -75,6 +75,8 @@ final runtime evidence + clean frozen candidate + independent verdict.
 
 ## Git topology
 
+- Worktrees below are created by the EXECUTION session after a validated START - never
+  by the planning session (see [handoff-and-start.md](handoff-and-start.md)).
 - Capture the original NAMED target branch and its full starting SHA at campaign start.
   Do not assume main/master; do not reinterpret HEAD later. Detached HEAD start: the user
   must name the target branch.

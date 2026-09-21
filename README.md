@@ -7,15 +7,20 @@ Designed for the
 [Hermes](https://hermes-agent.nousresearch.com/docs/user-guide/features/skills/) planner
 profile; portable to other orchestrating agents with adapter changes.
 
-This is a **procedure document** (a standard [Agent Skill](https://agentskills.io/specification):
-`SKILL.md` plus references and templates), not software:
+This is a **procedure-first [Agent Skill](https://agentskills.io/specification)**:
+`SKILL.md` plus references and templates, bundled since v1.1.0 with a small **optional**
+observer utility (`scripts/`, Python 3 standard library only) that helps a coordinator
+monitor agent progress.
 
-- It is **not** a running scheduler or service — nothing executes on its own.
-- It bundles **no** coding model, reviewer ("inquisitor") binary, or other executables.
+- The skill is **not** a running scheduler or service — nothing executes on its own, and
+  the observer scripts run only when explicitly invoked.
+- It bundles **no** coding model, reviewer ("inquisitor") binary, or other executables
+  beyond the two read-only observer scripts.
 - It provides **no guarantee** of fully hands-off, safe execution. A human approves the
-  plan, and destructive actions still stop for explicit permission.
+  plan and separately starts execution; destructive actions still stop for explicit
+  permission.
 
-Version 1.0.0 · MIT License.
+Version 1.1.0 · MIT License.
 
 ## Requirements
 
@@ -25,6 +30,8 @@ Version 1.0.0 · MIT License.
   `ORCA_CLI_COMMAND`).
 - [OMP (Oh My Pi)](https://github.com/can1357/oh-my-pi) — the harness driving the coding
   agents; see its [skills documentation](https://github.com/can1357/oh-my-pi/blob/main/docs/skills.md).
+- Python 3 — only for the optional progress-observer scripts; standard library only, no
+  auto-start, no network, no dependencies.
 - Node.js/npm — only for the installer CLI below.
 - Git.
 - Model access for the coding model, fallback model, and independent reviewer.
@@ -82,17 +89,29 @@ Two Orca mechanisms are **not** routes to install this GitHub repo:
 
 ### About native Orca skill sharing
 
-Orca can share skills natively via **Skills → Share skills** (requires an Orca account;
-CLI publication additionally requires the default-off *Settings → Share Skills → Allow
-agents and the Orca CLI to publish skill links* permission). Share links are unlisted:
-anyone with the link can inspect and install, with version/files/digest preview, skill
-subsetting, global/workspace scope, and keep-local conflict protection. Recipients
-install such links through **Skills → Install from link**.
+Orca can share skills natively via **Skills → Share skills → Publish new version**
+(requires an Orca account; CLI publication additionally requires the default-off
+*Settings → Share Skills → Allow agents and the Orca CLI to publish skill links*
+permission). Per Orca's
+[sharing documentation](https://github.com/stablyai/orca/blob/main/docs/reference/sharing-agent-skills.md):
 
-**There is currently no published Orca share URL for this skill** (skill sharing is not
-available for it at this time), which is why the GitHub route above is the documented
-one. The GitHub install works immediately and needs no Orca Cloud login. A publisher who
-installs this skill may later share their copy through Orca's Share skills flow.
+- Published skill **versions are immutable**; publishing always creates a new version.
+- Share management lives in **Settings → Share Skills**; only the original publishing
+  account/package can publish new versions — publishing from one host does not magically
+  sync files installed on another host, and pushing to GitHub does **not** update any
+  Orca cloud snapshot.
+- Recipients manage installs via **Skills → Manage installs**: they can update to the
+  latest published version or roll back to a retained version. Do **not** assume an old
+  share link always serves the latest version unless you verify it.
+- On update, Orca's **Keep local** default preserves locally modified files; they are
+  replaced only when you explicitly discard them.
+- Native share URLs are unlisted capability links: do not publish them inside this
+  repository.
+
+The owner of this skill may have published an Orca share from another device. No share
+URL is embedded here (none was provided for this repo), which is why the GitHub route
+above is the documented one. A publisher who installs this skill may share their own
+copy through Orca's Share skills flow.
 
 ### Optional: Hermes route
 
@@ -105,14 +124,34 @@ hermes -p planner skills install \
 hermes -p planner chat --skills autonomous-campaign-development
 ```
 
+#### Updating an existing Hermes installation
+
+How you update depends on how the skill was originally installed — check before acting:
+
+- **Hub-installed source** (`hermes -p planner skills` shows a hub/registry source):
+  `hermes -p planner skills update autonomous-campaign-development` updates it.
+  Avoid `--force`: it overwrites local edits.
+- **Locally authored source** (`source=local`, e.g. a hand-placed or edited copy):
+  there is no safe blanket update. Back up the installed copy, review the incoming
+  payload, stage the replacement, and record what was replaced (a provenance receipt).
+  Never let an updater silently delete local drift.
+- In **any** case, a currently running session keeps the skill text it already loaded —
+  a fresh session is required to pick up the updated version.
+
 ## What it does
 
 The skill is a coordinator contract for one development campaign:
 
 - **Intake & plan**: focused clarification questions and improvement proposals before
   locking the plan; durable English campaign artifacts (`PLAN.md`, per-task files,
-  `TODO.md`, `STATE.json`, `EVENTS.jsonl`, evidence, final report) written inside the
-  repository — never chat memory.
+  `HANDOFF.md`, `MANIFEST.json`, `TODO.md`, `STATE.json`, `EVENTS.jsonl`, evidence,
+  final report) written inside the repository — never chat memory.
+- **Planning/execution boundary (v1.1.0)**: one explicit plan approval authorizes WHAT
+  may happen — it never starts agents. The planning session writes a durable HANDOFF
+  plus a SHA-256 manifest of the frozen plan files and stops; execution begins only in a
+  **distinct fresh coordinator session** on an explicit START bound to that manifest
+  (drifted files invalidate consent). Already-started campaigns resume without
+  re-gating. No per-task human gates are added.
 - **DAG and resource ownership**: explicit dependency edges and resource exclusions
   (files, APIs, migration ordering, schema ownership, lockfiles, build output, ports,
   fixture data, databases, external side effects); shared contracts are settled
@@ -124,21 +163,24 @@ The skill is a coordinator contract for one development campaign:
   remediation agents included), one writer per worktree.
 - **Topology**: a dedicated campaign integration worktree created from a pinned start
   SHA and a recorded **named** source branch (never assumes `main`/`master`).
-- **One approval gate**: a single explicit plan approval authorizes development, tests,
-  reviews, task squash merges, the final merge, and cleanup. Push, publication, and
-  deployment stay separate explicit permissions.
 - **Per-task loop**: develop → runtime test loop → independent review loop → squash
   integration and conflict handling → post-merge runtime smoke → evidence and cleanup.
   Runtime tests run after the executor declares readiness and after every fix batch.
 - **Independent review**: a read-only reviewer that never edited the code returns an
   explicit complete **PASS/FAIL** verdict with actionable findings, commissioned by the
   coordinator with a raw, unbiased evidence packet.
+- **Strict progress semantics (v1.1.0)**: transport/process activity (streams, bytes,
+  PID, file growth), a successful model response, and actual task progress are never
+  conflated; only explicit structured checkpoints count as progress. An optional
+  stdlib-only watchdog (`scripts/`) reports activity/health snapshots — observer-only:
+  no kills, no nudges, no network, writes only its own sidecar directory.
 - **Loops with evidence-based escalation**: no fixed iteration cap while evidence shows
   progress; non-convergence is an evidence-based pause (identical failure fingerprints,
   oscillating fixes, model cycling, scope growth, missing capability), not a counter.
-- **Durable state**: canonical `STATE.json`/`TODO.md`/`EVENTS.jsonl`/evidence under the
-  campaign directory; the coordinator polls every active session on a **ten-minute
-  cadence only while the campaign is running**.
+- **Durable state**: canonical `STATE.json` (schema 2: campaign lifecycle plus planning
+  and execution session records)/`TODO.md`/`EVENTS.jsonl`/evidence under the campaign
+  directory; the coordinator polls every active session on a **ten-minute cadence only
+  while the campaign is running**.
 - **Endgame**: full-campaign acceptance/seam runtime tests plus independent final review
   at the exact campaign tip, coordinator-only merge (default `--no-ff`) to the recorded
   source branch, post-merge smoke on the target, evidence archived **before** worktree
@@ -153,8 +195,12 @@ has loaded it, request a campaign in plain words, for example:
 > repo. Plan the tasks, ask me the model questions, and get my approval before any
 > agent starts working.
 
-The skill itself then drives intake → plan → model questionnaire → **one approval gate**
-→ execution. To resume after a restart or crash:
+The skill then drives intake → plan → model questionnaire → **one approval gate** (WHAT
+may happen) → HANDOFF + manifest written → the planning session **stops**. You begin
+execution by pasting the START prompt (from the HANDOFF) into a **new, clean coordinator
+session**; that session validates the manifest, the repo state, and its own capabilities
+before creating any worktree or agent. To resume a started campaign after a restart or
+crash:
 
 > Resume the campaign from its state files in plans/ and continue where evidence left
 > off.
@@ -173,16 +219,26 @@ The skill itself then drives intake → plan → model questionnaire → **one a
 skills/autonomous-campaign-development/
 ├── SKILL.md                                 # the skill: contract, procedure, pitfalls
 ├── references/
+│   ├── handoff-and-start.md                 # planning boundary, HANDOFF, manifest, START
 │   ├── hermes-orca-omp.md                   # dispatch mechanics and command shapes
+│   ├── progress-watchdog.md                 # progress semantics, observer CLI contract
 │   ├── runtime-review-and-integration.md    # topology, review, integration, cleanup
-│   ├── state-and-recovery.md                # state schema, crash windows, resume
+│   ├── state-and-recovery.md                # state schema, lifecycle, resume
 │   └── validation-tabletop.md               # static checks and tabletop walkthroughs
-└── templates/
-    ├── PLAN.md                              # campaign plan template
-    ├── TASK.md                              # per-task file template
-    ├── TODO.md                              # campaign TODO template
-    └── STATE.json                           # campaign state template
+├── templates/
+│   ├── PLAN.md                              # campaign plan template
+│   ├── TASK.md                              # per-task file template
+│   ├── HANDOFF.md                           # execution handoff + manifest shape
+│   ├── TODO.md                              # campaign TODO template
+│   └── STATE.json                           # campaign state template (schema 2)
+└── scripts/                                 # optional observer utility (v1.1.0)
+    ├── omp_events.py                        # metadata-only OMP session log adapter
+    └── campaign_watch.py                    # deterministic progress watcher CLI
 ```
+
+A `templates/WATCH.json` (watchdog config) is planned but intentionally not shipped
+until its schema is aligned with `scripts/campaign_watch.py`; see
+`references/progress-watchdog.md`.
 
 ## Customization and porting
 
@@ -196,9 +252,14 @@ and tabletop walkthroughs in `references/validation-tabletop.md` before relying 
 With the community skills CLI, in the project where it is installed:
 
 ```bash
-npx skills update autonomous-campaign-development   # refresh to the repo's latest
 npx skills remove autonomous-campaign-development   # remove from agent directories
 ```
+
+For updates, re-run the exact `skills add` command from [Install](#install-recommended-orca-workspace-project-scope)
+against the same scope: it re-fetches the repo's current payload and walks you through
+any conflicts with local files — review the prompts and keep backups of local edits.
+(The CLI's positional-name `update` form is not advertised here because its targeting
+was not verified against upstream.)
 
 ## Safety, trust, and license
 
@@ -206,8 +267,11 @@ npx skills remove autonomous-campaign-development   # remove from agent director
   for agents — treat it with the same scrutiny as any other dependency.
 - The skill defers to repository instructions (e.g. `AGENTS.md`), hooks, permission
   systems, and your campaign approval; conflicts are surfaced, not bypassed.
-- Autonomous execution is gated on your explicit plan approval; push/deploy remain
-  separate permissions. No guarantee of unattended safety is offered or implied.
+- Autonomous execution requires BOTH your explicit plan approval and a separate explicit
+  START in a fresh session; push/deploy remain separate permissions. No guarantee of
+  unattended safety is offered or implied.
+- The observer scripts are read-only helpers: they never kill, nudge, merge, or talk to
+  the network, and they write only their own sidecar directory.
 - License: MIT — see [LICENSE](LICENSE).
 
 ## Compatibility boundaries (facts)
@@ -221,6 +285,10 @@ npx skills remove autonomous-campaign-development   # remove from agent director
   project scope.
 - The community skills CLI does not target OMP (`--agent omp` does not exist); use
   OMP's documented skill path or an explicit read.
+- Campaign state written by v1.0.0 (`schema_version` 1 or missing) remains resumable:
+  already-started campaigns keep their original approval; approved-but-never-started
+  ones require a fresh-session START under the v1.1.0 contract
+  (`references/state-and-recovery.md` describes the migration; nothing is auto-enforced).
 - The full workflow additionally requires Orca + OMP + an independent reviewer.
 
 ## Sources

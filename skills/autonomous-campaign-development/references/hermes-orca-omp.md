@@ -72,6 +72,7 @@ orca-ide terminal wait --terminal <handle> --for tui-idle --timeout-ms 90000 --j
 - Verify the real OMP is running before sending anything: session file appeared and is
   growing under the agent session directory, and `terminal read` tail shows activity -
   never send prose to a startup or fallback shell. Readiness failure stops dispatch.
+  (This proves the process started - transport activity, not task progress.)
 - Briefing: overwrite the worktree's brief file (for example `BRIEF.md`) immediately
   after `worktree create` - a fresh worktree inherits whatever brief the base branch
   carries - then verify its title line matches this task before dispatch.
@@ -93,9 +94,12 @@ orca-ide terminal read --terminal <handle> --limit <n> --json
 orca-ide worktree ps --json
 ```
 
-- Liveness = session file growth plus terminal content evolution; compare processes,
-  commands, and checkpoint evidence across polls. An idle-but-ready agent is not a crash;
-  a long-running command is not a stall.
+- Session file growth and terminal content evolution are transport/process activity
+  ONLY - never evidence of progress or completion. Apply the progress semantics and the
+  distinct timestamps from [progress-watchdog.md](progress-watchdog.md); only explicit
+  structured checkpoints update semantic progress. An idle-but-ready agent is not a
+  crash; a long-running command within its deadline is not a stall. The optional
+  observer scripts (`scripts/`) may assist polling; they are observer-only.
 - A pending interactive `ask` in the session freezes the agent: detect it and answer it
   through the terminal; do not kill a session that is merely waiting for input.
 - After `terminal close --terminal <handle> --json`, VERIFY the worker process actually
