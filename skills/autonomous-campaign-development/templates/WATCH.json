@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "sidecar_dir": "/path/to/campaign/.watch",
+  "poll_seconds": 30,
+  "heartbeat_seconds": 300,
+  "stale_seconds": 120,
+  "no_step_seconds": 600,
+  "retry_window_seconds": 600,
+  "repeat_error_count": 3,
+  "tasks": [
+    {
+      "task": "example-task",
+      "attempt": "a1",
+      "phase": "develop",
+      "session_log": "/path/to/session.jsonl",
+      "session_id": null,
+      "registered_at": "REPLACE_WITH_ISO8601_UTC",
+      "candidate": null,
+      "checkpoint_files": [],
+      "artifact_files": [],
+      "tool_deadline_seconds": 1800,
+      "process": null
+    }
+  ]
+}

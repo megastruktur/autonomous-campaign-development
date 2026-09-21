@@ -48,16 +48,49 @@ Template: [../templates/STATE.json](../templates/STATE.json). Key enums:
   `review.bound_to` (exact commit/tree/build); a verdict without its binding is invalid.
 - Status mapping: internal `in_review` <-> Orca external `in-review`; internal
   `in_progress` <-> Orca `in-progress`. No other spellings.
+- `lifecycle`: `planning` -> `awaiting_fresh_session_start` -> `executing` ->
+  `completed`; the `pause` block is orthogonal. `sessions.planning` and
+  `sessions.execution` record session identities independently; `approval` (the plan
+  gate) and `start` (the execution start, bound to `plan_manifest.sha256`) are separate
+  records - see [handoff-and-start.md](handoff-and-start.md).
 
 Per task, state stores: stage history and current stage, dependency edges, exclusive
 resources, worktree name/path, actual returned git branch, task tip SHA, session handle
 and session identity, resolved model in use, runtime evidence pointers, reviewer handle
 and verdicts with bindings, remediation records (cause/action/expectation/result/next),
 merge receipts, timestamps (`created_at`, `last_checked_at`, `last_progress_at`), pause
-reason, cleanup inventory and verification. Campaign-level: pinned original target branch
-and starting SHA, campaign branch/worktree, approval record (scope, final merge strategy,
-push excluded), requested/resolved/pinned models, final-stage statuses, next action,
-active pause with actor.
+reason, cleanup inventory and verification, and the attempt record (`attempt.label`,
+`attempt.started_at`, `attempt.budget_seconds`, `attempt.checkpoint_due_at`,
+`attempt.predeclared_deadline`) plus `unproductive_attempts`. Campaign-level: pinned
+original target branch and starting SHA, campaign branch/worktree, approval record
+(scope, final merge strategy, push excluded), execution policy defaults
+(`execution_policy`: `attempt_budget_seconds` 2100, `checkpoint_due_seconds` 1200,
+`max_unproductive_attempts` 2, `extensions` null unless predeclared), plan manifest
+binding, start record, session identities, lifecycle, requested/resolved/pinned models,
+final-stage statuses, next action, active pause with actor.
+
+## State lifecycle and legacy migration
+
+Lifecycle transitions are event-logged: `planning` -> `awaiting_fresh_session_start`
+(HANDOFF + manifest written, planning session stopped) -> `executing` (fresh-session
+START validated) -> `completed`. A restart never re-runs a completed transition.
+
+Legacy states (`schema_version` 1 or missing, written by skill versions <= 1.0.0) have
+no lifecycle/sessions/plan_manifest/start fields; under that contract a plan approval
+could begin execution in the same session. Migration rules - the coordinator reconciles
+and records honestly, never fabricates:
+
+- Execution already verifiably began (worktrees, live sessions, or merge receipts
+  exist): the original approval REMAINS valid and the campaign resumes as executing.
+  Set `lifecycle: executing`, keep `sessions`/`start` null where unknown, do NOT invent
+  a start record or manifest hash; append a migration event naming the evidence.
+- Approved but nothing began: set `lifecycle: awaiting_fresh_session_start`; a
+  first START under the current contract (fresh session, manifest validation) is
+  required before any execution. A legacy campaign has no manifest: `plan_manifest`
+  stays null, and START relies on explicit operator confirmation recorded in state -
+  identity that cannot be verified is never claimed as enforced.
+- Never auto-enforce: the coordinator must not silently rewrite a legacy state to look
+  like a native schema-2 campaign; reconciliation decisions are recorded as events.
 
 ## TODO projection
 
@@ -73,13 +106,29 @@ from state after any restart; never trust a possibly stale copy.
 While the coordinator is active, every ten minutes poll EVERY active development,
 testing, review, and remediation session:
 
-1. Session alive? (terminal/process/session-file evidence - not output silence alone.)
-2. Progressing? (commands, diff growth, checkpoint events; update `last_progress_at`.)
+1. Session alive? Terminal/process/session-file evidence - this is transport/process
+   activity ONLY, not progress.
+2. Progressing? Apply the progress semantics from
+   [progress-watchdog.md](progress-watchdog.md): keep last observed, last successful
+   assistant, last completed tool (isError separate), and last semantic progress
+   distinct; only explicit structured checkpoints update `last_progress_at`. An idle
+   ready agent is not a crash; a long-running command within its deadline is not a
+   stall. The optional observer scripts may feed this loop; their output is never
+   authoritative and they never write canonical state.
 3. Finished or `in-review`? Validate a clean committed snapshot plus runtime report, then
    commission independent review EXACTLY ONCE per candidate (dedupe by commit SHA).
 4. Fix rounds dispatched? Reset worktree status to `in-progress` so stale `in-review`
    cannot re-trigger review.
-5. Append an event and checkpoint state each loop.
+5. Attempt budget: compare `now` against the recorded `attempt.started_at` in state.
+   The clock starts at actual attempt launch and is NEVER reset by transport/metadata
+   churn, an empty verdict shell, repeated reads, or a watcher/coordinator restart.
+   At `checkpoint_due_seconds` (default 1200): inspect progress evidence and issue at
+   most ONE scoped steer. At `attempt_budget_seconds` (default 2100): settle the
+   attempt - complete and verify, or stop/fence the writer, preserve partial work and
+   logs, shorten the brief, restart scoped. A genuinely long build/test runs only
+   under a predeclared bounded `attempt.predeclared_deadline`; a session waiting on
+   human input is paused, not retried.
+6. Append an event and checkpoint state each loop.
 
 A status file is not a running scheduler: after the coordinator closes or the host
 reboots, nothing polls autonomously unless a separately verified watcher exists. Do not
@@ -109,6 +158,8 @@ Recovery rule per operation class:
 
 On `continue execution` (or any restart), in order:
 
+0. No `start.started` in state and lifecycle `awaiting_fresh_session_start`: this is a
+   FIRST START, not a resume - follow [handoff-and-start.md](handoff-and-start.md).
 1. Read STATE, TODO, PLAN, and current task reports - no long history research.
 2. Acquire/reconcile coordinator ownership; exactly one coordinator proceeds.
 3. Validate the repo: target branch and starting SHA unchanged or consciously re-pinned;
@@ -148,8 +199,26 @@ unrelated DAG branches continue) only on evidence: repeated identical failure fi
 with no measurable progress after materially different attempts; oscillating
 fixes/reverts; model cycling without diagnosis; growing out-of-scope diff; contradictory
 requirements; unavailable capability; risk to user data. Present evidence, attempts,
-hypothesis, and proposed options. Do NOT impose an arbitrary N-strike test/review cutoff;
-numerical thresholds, if configured in the campaign approval, trigger diagnosis, never
-automatic permanent FAIL. The user can stop anything at any time; an operator pause is
-never self-resumed. This conservative default is configurable in campaign approval -
-never a secret fixed loop cap.
+hypothesis, and proposed options. Do NOT impose an arbitrary N-strike test/review cutoff.
+The user can stop anything at any time; an operator pause is never self-resumed. This
+conservative default is configurable in campaign approval - never a secret fixed loop
+cap.
+
+Two numerical regimes coexist without conflict:
+
+- OBSERVER thresholds (`no_step_seconds`, `retry_window_seconds`, `stale_seconds`)
+  trigger DIAGNOSIS only - they never fail anything.
+- The approved ATTEMPT BUDGET (`execution_policy.attempt_budget_seconds`, default 2100)
+  is a hard procedural cap on one execution attempt, enforced by the
+  coordinator/runtime through scoped control (the observer scripts never kill). Budget
+  expiry settles the attempt: complete and verify, or stop/fence and preserve partial
+  work plus logs, shorten the brief, and restart scoped. A budgeted stop is NOT a
+  permanent feature FAIL and never an automatic acceptance; the deliverable still owes
+  full runtime evidence and review.
+- Unproductive-attempt accounting: after `max_unproductive_attempts` (default 2)
+  unproductive executions of the same slice - attempts that produced no useful
+  artifact, evidence, or actionable finding - do NOT blindly retry the same route a
+  third time. Use the approved fallback model/route for THIS task/attempt, or pause
+  with concise evidence and options. A useful review FAIL with fixable findings is a
+  PRODUCTIVE outcome and does not consume this budget; substantive test/fix/review
+  cycles keep their no-fixed-limit rule while evidence shows progress.

@@ -1,7 +1,12 @@
 {
-  "_readme": "Template for {prefix}_STATE.json. Replace every null and the one example task entry; keep filename-convention strings ({prefix}_*) as written. Sole writer: the coordinator. Atomic replace + revision bump on every write. Unknown stays null.",
-  "schema_version": 1,
+  "_readme": "Template for {prefix}_STATE.json. Replace every null and the one example task entry; keep filename-convention strings ({prefix}_*) as written. Sole writer: the coordinator. Atomic replace + revision bump on every write. Unknown stays null. schema_version 2 (skill 1.1.0): adds lifecycle, sessions, plan_manifest, start. Legacy schema_version 1 or missing: see references/state-and-recovery.md before resuming; never fabricate the new fields. execution_policy (campaign-level attempt budget defaults; extensions only via explicit predeclared per-task long-job budgets) and tasks[].attempt/unproductive_attempts record the bounded-attempt policy from SKILL.md section 10 - procedural enforcement, no automated flags.",
+  "schema_version": 2,
   "revision": 0,
+  "lifecycle": "planning",
+  "sessions": {
+    "planning": { "identity": null, "recorded_at": null },
+    "execution": { "identity": null, "recorded_at": null }
+  },
   "owner": {
     "coordinator_id": null,
     "acquired_at": null
@@ -15,6 +20,7 @@
     "campaign_worktree": null,
     "campaign_branch": null
   },
+  "plan_manifest": { "path": "{prefix}_MANIFEST.json", "sha256": null },
   "approval": {
     "approved": false,
     "approver": null,
@@ -23,6 +29,19 @@
     "final_merge_strategy": "--no-ff",
     "push_authorized": false,
     "non_convergence_policy": "evidence-based-pause"
+  },
+  "execution_policy": {
+    "attempt_budget_seconds": 2100,
+    "checkpoint_due_seconds": 1200,
+    "max_unproductive_attempts": 2,
+    "extensions": null
+  },
+  "start": {
+    "started": false,
+    "started_by": null,
+    "started_at": null,
+    "manifest_sha256": null,
+    "startup_checks": null
   },
   "models": {
     "coding": { "requested": null, "resolved": null },
@@ -61,6 +80,14 @@
         "tree": null
       },
       "remediation": [],
+      "attempt": {
+        "label": null,
+        "started_at": null,
+        "budget_seconds": null,
+        "checkpoint_due_at": null,
+        "predeclared_deadline": null
+      },
+      "unproductive_attempts": 0,
       "pause": null,
       "timestamps": {
         "created_at": null,
