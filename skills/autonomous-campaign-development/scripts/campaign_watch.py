@@ -18,33 +18,56 @@ Config (schema_version 1):
    "checkpoint_files":[],"artifact_files":[],
    "tool_deadline_seconds":1800,
    "process":null|{"pid":int,"start_ticks":int,"boot_id":str}}]}
-Intervals are positive floats <=86400 (fractional allowed). Max 1024 tasks.
+Intervals are positive floats <=86400 (fractional allowed). Max 64 tasks.
+Error codes: config_unreadable, config_invalid, state_corrupt,
+state_capacity, no_snapshot, config_changed, observer_locked,
+sidecar_unmanaged, sidecar_refused, task_unknown, internal.
 
 Sidecar files (only writes; NEVER session logs/sources/STATE/TODO/EVENTS):
-  state.json    persistent baselines/adapter cursors/checkpoints (atomic)
-  snapshot.json last classified views + config digest (atomic)
+  state.json    persistent baselines/adapter cursors/checkpoints (atomic,
+                read AND write bounded by MAX_STATE_BYTES=32MiB; write
+                breach -> state_capacity, old files untouched)
+  snapshot.json last classified views + config digest (atomic, same bound)
   observer.lock fcntl flock single writer (poll/watch); status read-only
+  .watch_managed ownership marker; a pre-existing sidecar dir holding
+                anything but known managed files -> sidecar_unmanaged
+Config inputs (config file, session_log, checkpoint/artifact allowlist)
+must never alias managed outputs or live inside the sidecar dir; managed
+outputs are never symlinks (no-follow open, symlink -> sidecar_refused).
 
 Health: ok/degraded/suspect_stall/confirmed_retry_loop/unknown.
 Activity: generating/tool_running/waiting_input/idle/exited/unknown.
 Limitations: process identity only on Linux /proc (else unknown, never
-exited); confirmed_retry_loop needs >=repeat_error_count same NON-NULL
-assistant error fingerprint after last useful step within retry window;
-checkpoint trust is producer attestation (verified flag), not proof;
-artifact diffs are candidate signals, never progress. Excess tasks,
-relative paths, duplicate ids, unsafe values -> config_invalid (never
-silently ignored).
+exited); inaccessible /proc (EACCES/hidepid) -> unknown, ONLY ENOENT or
+boot/ticks mismatch -> exited; a live PID alone never yields activity
+"generating" (unknown without pending ask/running tool evidence);
+confirmed_retry_loop needs >=repeat_error_count same NON-NULL assistant
+error fingerprint after last useful step, EACH within the rolling retry
+window (unrelated newer errors never freshen an old group); adapter
+uncertainty flags hold health at unknown (adapter_uncertain) until actual
+adapter recovery; tool completion is success ONLY when is_error IS false
+(null/failed never refresh the step clock; successful current-branch
+completions count as useful steps); checkpoint confirmation requires a
+positively bound session id AND configured non-null candidate (else
+unbound_identity), exact identity match, aware-UTC completed_at <= now
+(no future grace) and >= registration baseline; checkpoint trust is
+producer attestation (verified flag), not proof; artifact diffs are
+candidate signals, never progress. Excess tasks, relative paths,
+duplicate ids, unsafe values -> config_invalid (never silently ignored).
 """
 
 from __future__ import annotations
 
 import argparse
+import errno
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import signal
+import stat
 import sys
 import time
 from datetime import datetime, timezone
@@ -54,7 +77,8 @@ from omp_events import OmpSessionAdapter  # noqa: E402
 
 STATUS_CAP = 1024          # status/heartbeat line incl newline, UTF-8 bytes
 DIAG_CAP = 4096            # diagnose/poll line incl newline
-MAX_TASKS = 1024
+MAX_TASKS = 64             # practical bound; state writes are byte-capped too
+MAX_STATE_BYTES = 32 << 20  # state.json/snapshot.json read AND write bound
 MAX_TASK_FILES = 64
 MAX_PATH = 512
 ARTIFACT_MAX_BYTES = 1 << 20
@@ -64,6 +88,10 @@ REMOVED_CAP = 128
 SKEW = 300.0
 STATE_VERSION = 1
 CHECKPOINT_KINDS = {"runtime_scenario", "review_checkpoint", "artifact_checkpoint"}
+MARKER_NAME = ".watch_managed"
+MARKER_CONTENT = "campaign_watch/1\n"
+MANAGED_FILES = ("state.json", "snapshot.json", "observer.lock", MARKER_NAME)
+PID_GONE = object()  # stat_reader result: pid confirmed absent (ENOENT)
 _SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,127}$")
 _SAFE_PHASE = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
 HEALTHS = ("ok", "degraded", "suspect_stall", "confirmed_retry_loop", "unknown")
@@ -112,8 +140,18 @@ def _iso(ts):
 
 
 def _atomic_write(path, text):
+    """Atomic replace; refuses symlink/non-regular targets (no follow)."""
+    if os.path.islink(path) or (os.path.lexists(path)
+                                and not os.path.isfile(path)):
+        raise ConfigError("sidecar_refused")
     tmp = path + ".tmp.%d" % os.getpid()
-    with open(tmp, "w", encoding="utf-8") as f:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(tmp, flags, 0o600)
+    except OSError as e:
+        raise ConfigError("sidecar_refused" if e.errno == errno.ELOOP
+                          else "internal")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(text)
         f.flush()
         os.fsync(f.fileno())
@@ -121,13 +159,16 @@ def _atomic_write(path, text):
 
 
 def _read_json(path, cap):
-    """Bounded JSON read; returns dict or None (missing/corrupt/oversized)."""
+    """Bounded JSON read of a REGULAR file (no symlinks); dict or None."""
     try:
         st = os.lstat(path)
-        if not os.path.isfile(path) or st.st_size > cap:
+        if not stat.S_ISREG(st.st_mode) or st.st_size > cap:
             return None
         with open(path, "r", encoding="utf-8") as f:
-            data = json.loads(f.read(cap + 1))
+            raw = f.read(cap + 1)
+        if len(raw.encode("utf-8")) > cap:  # actual bytes, not stat alone
+            return None
+        data = json.loads(raw)
         return data if isinstance(data, dict) else None
     except (OSError, ValueError):
         return None
@@ -177,8 +218,16 @@ def _proc_spec(raw):
 def load_config(path, now=None):
     """Strict-validated config; raises ConfigError('config_invalid')."""
     try:
+        st = os.lstat(path)
+        if not stat.S_ISREG(st.st_mode) or st.st_size > (1 << 20):
+            raise ConfigError("config_unreadable")
         with open(path, "r", encoding="utf-8") as f:
-            cfg = json.loads(f.read(1 << 20))
+            raw = f.read((1 << 20) + 1)
+        if len(raw.encode("utf-8")) > (1 << 20):
+            raise ConfigError("config_unreadable")
+        cfg = json.loads(raw)
+    except ConfigError:
+        raise
     except (OSError, ValueError):
         raise ConfigError("config_unreadable")
     if not isinstance(cfg, dict) or cfg.get("schema_version") != 1:
@@ -208,7 +257,59 @@ def load_config(path, now=None):
     ids = [t["task"] for t in out["tasks"]]
     if len(set(ids)) != len(ids):
         raise ConfigError("config_invalid")
+    _alias_check(out, os.path.realpath(path))
     return out
+
+
+def _alias_check(cfg, cfg_real):
+    """Inputs/config must never alias managed outputs or the sidecar dir.
+
+    All paths are already realpath-resolved, so symlinks cannot bypass.
+    """
+    sidecar = cfg["sidecar_dir"]
+    managed = {os.path.join(sidecar, n) for n in MANAGED_FILES}
+
+    def _bad(p):
+        return p in managed or p == sidecar or p.startswith(sidecar + os.sep)
+
+    if _bad(cfg_real):
+        raise ConfigError("config_invalid")
+    for t in cfg["tasks"]:
+        paths = ([t["session_log"]] + t["checkpoint_files"]
+                 + t["artifact_files"])
+        if any(_bad(p) for p in paths):
+            raise ConfigError("config_invalid")
+
+
+def prepare_sidecar(cfg):
+    """Create/validate sidecar BEFORE any lock/write.
+
+    A pre-existing dir is managed iff it carries a valid ownership marker,
+    or holds only known managed files (fresh/legacy sidecar). Anything else
+    (e.g. sidecar_dir == campaign root with unmanaged files) is refused.
+    """
+    d = cfg["sidecar_dir"]
+    os.makedirs(d, exist_ok=True)
+    known = set(MANAGED_FILES)
+    for name in MANAGED_FILES:
+        if os.path.islink(os.path.join(d, name)):
+            raise ConfigError("sidecar_refused")
+    marker = os.path.join(d, MARKER_NAME)
+    if os.path.lexists(marker):
+        try:
+            with open(marker, "r", encoding="utf-8") as f:
+                ok = f.read(len(MARKER_CONTENT) + 1) == MARKER_CONTENT
+        except OSError:
+            ok = False
+        if not ok or not os.path.isfile(marker):
+            raise ConfigError("sidecar_unmanaged")
+    else:
+        extra = [e for e in os.listdir(d)
+                 if e not in known
+                 and e.split(".tmp.")[0] not in known]
+        if extra:
+            raise ConfigError("sidecar_unmanaged")
+        _atomic_write(marker, MARKER_CONTENT)
 
 
 def _task_cfg(raw, root, now):
@@ -255,19 +356,32 @@ def _read_boot_id():
 
 
 def _read_starttime(pid):
-    """/proc/<pid>/stat starttime (field 22) or None if unreadable/gone."""
+    """/proc/<pid>/stat starttime (field 22), PID_GONE if absent, else None.
+
+    None means INACCESSIBLE (EACCES/hidepid/malformed) -> never `exited`.
+    """
     try:
         with open("/proc/%d/stat" % pid, "r") as f:
             data = f.read()
         rest = data[data.rindex(")") + 2:].split()
         return int(rest[19])
+    except FileNotFoundError:
+        return PID_GONE
     except (OSError, ValueError, IndexError):
         return None
 
 
 def process_verdict(spec, boot_reader=_read_boot_id,
                     stat_reader=_read_starttime, platform=sys.platform):
-    """alive|exited|unknown. Unknown on unsupported platform/inaccessible."""
+    """alive|exited|unknown. Unknown on unsupported platform/inaccessible.
+
+    `exited` requires positive evidence: boot_id mismatch (recorded identity
+    predates this boot), stat_reader returning PID_GONE (ENOENT), or a
+    readable stat whose starttime differs (PID reuse). None from stat_reader
+    (inaccessible) is ALWAYS unknown. Boot/ticks evidence assumes the
+    recorded identity shares this PID namespace; generation cannot be
+    proven from `alive`, only matched.
+    """
     if spec is None:
         return None
     if not platform.startswith("linux"):
@@ -277,23 +391,32 @@ def process_verdict(spec, boot_reader=_read_boot_id,
         return "unknown"
     if boot != spec["boot_id"]:
         return "exited"  # recorded identity predates current boot
-    ticks = stat_reader(spec["pid"])
+    try:
+        ticks = stat_reader(spec["pid"])
+    except OSError:
+        return "unknown"  # inaccessible: EACCES/hidepid, never exited
     if ticks is None:
-        return "exited"  # pid gone
+        return "unknown"
+    if ticks is PID_GONE:
+        return "exited"  # pid confirmed absent
     return "alive" if ticks == spec["start_ticks"] else "exited"  # reuse
 
 
 def _hash_file(path):
-    """sha256+size for a bounded artifact, or None (unreadable/oversized)."""
+    """sha256+size for a bounded REGULAR artifact, or None (unverifiable)."""
     try:
-        st = os.stat(path)
-        if not os.path.isfile(path) or st.st_size > ARTIFACT_MAX_BYTES:
+        st = os.lstat(path)
+        if not stat.S_ISREG(st.st_mode) or st.st_size > ARTIFACT_MAX_BYTES:
             return None
         h = hashlib.sha256()
+        total = 0
         with open(path, "rb") as f:
             for chunk in iter(lambda: f.read(65536), b""):
+                total += len(chunk)
+                if total > ARTIFACT_MAX_BYTES:  # actual bytes, not stat alone
+                    return None
                 h.update(chunk)
-        return {"sha256": h.hexdigest(), "size": st.st_size}
+        return {"sha256": h.hexdigest(), "size": total}
     except OSError:
         return None
 
@@ -312,11 +435,30 @@ def artifact_signals(files, prev):
     return sigs, sorted(changed), sorted(bad)
 
 
-def read_checkpoint(path, tcfg, bound_session, confirmed, now):
+def _parse_iso_strict(raw, now):
+    """Aware-UTC ISO-8601 -> epoch, or None. Naive/future rejected (no grace)."""
+    if not isinstance(raw, str) or not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        return None  # naive timestamps are not acceptable progress evidence
+    ts = dt.timestamp()
+    if ts < 0 or ts > now:
+        return None  # strict: no future grace for progress
+    return ts
+
+
+def read_checkpoint(path, tcfg, bound_session, confirmed, now, baseline=None):
     """Validate semantic checkpoint file.
 
-    Returns (record|None, reason). record={checkpoint_id,completed_at,kind}.
-    Rejected (reason set) on: unreadable/shape/mismatch/future/replay/older.
+    Returns (record|None, reason). Confirmation REQUIRES a positively bound
+    session id AND a configured non-null candidate; until both exist the
+    verdict is `unbound_identity` (never a skipped/existence check). Identity
+    comparisons are exact. `completed_at` must be aware UTC, <= now (no
+    future grace), and not older than the registration baseline.
     """
     data = _read_json(path, CHECKPOINT_MAX_BYTES)
     if data is None:
@@ -325,25 +467,45 @@ def read_checkpoint(path, tcfg, bound_session, confirmed, now):
         return None, "shape"
     if data.get("task") != tcfg["task"] or data.get("attempt") != tcfg["attempt"]:
         return None, "mismatch"
-    if bound_session and data.get("session_id") != bound_session:
-        return None, "mismatch"
-    if tcfg["candidate"] is not None and data.get("candidate") != tcfg["candidate"]:
+    if not bound_session or tcfg["candidate"] is None:
+        return None, "unbound_identity"
+    if (data.get("session_id") != bound_session
+            or data.get("candidate") != tcfg["candidate"]):
         return None, "mismatch"
     cid, kind = data.get("checkpoint_id"), data.get("kind")
     if (not isinstance(cid, str) or not _SAFE_ID.match(cid)
             or kind not in CHECKPOINT_KINDS or data.get("verified") is not True):
         return None, "shape"
-    ts = _parse_iso(data.get("completed_at"), now)
+    ts = _parse_iso_strict(data.get("completed_at"), now)
     if ts is None:
-        return None, "timestamp"  # malformed or future
+        return None, "timestamp"  # malformed, naive, or future
+    floor = baseline if baseline is not None else tcfg["registered_at"]
+    if ts < floor:
+        return None, "timestamp"  # predates registration: not this attempt
     if confirmed and (cid == confirmed["checkpoint_id"]
                       or ts <= confirmed["completed_at"]):
         return None, "replay"  # never count repeats/touches as new
-    return {"checkpoint_id": cid, "completed_at": ts, "kind": kind}, ""
+    return {"checkpoint_id": cid, "completed_at": ts, "kind": kind,
+            "task": tcfg["task"], "attempt": tcfg["attempt"],
+            "session_id": bound_session,
+            "candidate": tcfg["candidate"]}, ""
 
 
-def _ts_ok(rec):
-    return rec.get("ts") if (rec and rec.get("ts_valid")) else None
+def _valid_ts(rec, now):
+    """Finite event ts <= now from a ts_valid record, else None (fail closed).
+
+    Independent of the adapter's own ts_valid verdict: unexpected types,
+    non-finite, or future values never count as progress.
+    """
+    if not rec or not rec.get("ts_valid"):
+        return None
+    ts = rec.get("ts")
+    if isinstance(ts, bool) or not isinstance(ts, (int, float)):
+        return None
+    ts = float(ts)
+    if not math.isfinite(ts) or ts > now:
+        return None
+    return ts
 
 
 def classify_task(tcfg, tstate, snap, report, proc, now, th):
@@ -358,6 +520,7 @@ def classify_task(tcfg, tstate, snap, report, proc, now, th):
         "phase": tcfg.get("phase"), "process": proc,
         "last_observed_at": (snap.get("observation") or {}).get("last_poll_at"),
         "last_successful_response_at": None, "last_tool_completed_at": None,
+        "last_tool_outcome": None,
         "last_progress_at": (tstate.get("checkpoint") or {}).get("completed_at"),
         "pending_ask": False, "pending_tools": 0, "errors_recent": 0,
         "retry_fingerprint_count": 0, "uncertainty": un,
@@ -367,21 +530,36 @@ def classify_task(tcfg, tstate, snap, report, proc, now, th):
     bound = tstate.get("session_id")
     mismatch = bool(session and bound
                     and session.get("header_id") != bound)
-    ls = snap.get("last_success")
     # genuine event ts only; live:false is historical but may anchor age
-    step_ts = _ts_ok(ls)
+    step_ts = _valid_ts(snap.get("last_success"), now)
     view["last_successful_response_at"] = step_ts
+    # tool outcome: is_error IS False is the ONLY success; null/failed are
+    # never progress. A successful current-branch completion also counts as
+    # a useful step (evidence of active work), failures/unknown never do.
+    tool_step = None
     lt = snap.get("last_tool")
-    if lt and lt.get("ts_valid") and not lt.get("is_error"):
-        view["last_tool_completed_at"] = lt.get("ts")  # errors are not steps
+    if lt is not None:
+        lt_ts = _valid_ts(lt, now)
+        outcome = lt.get("is_error")
+        if lt_ts is None or outcome not in (True, False):
+            view["last_tool_outcome"] = "unknown"
+        elif outcome is False:
+            view["last_tool_outcome"] = "successful"
+            view["last_tool_completed_at"] = lt_ts
+            tool_step = lt_ts
+        else:
+            view["last_tool_outcome"] = "failed"  # completion, not a step
     pend = snap.get("pending_tools") or []
     asks = [p for p in pend if p.get("kind") == "ask_waiting"]
     running = [p for p in pend if p.get("kind") == "running"]
     view["pending_ask"] = bool(asks)
     view["pending_tools"] = len(pend)
-    tool_ok = any(p.get("ts_valid") and isinstance(p.get("ts"), (int, float))
-                  and now - p["ts"] <= tcfg["tool_deadline_seconds"]
-                  for p in running)
+    tool_ok = False
+    for p in running:  # stale/off-branch/invalid pending never grants an OK
+        pts = _valid_ts(p, now)
+        if pts is not None and now - pts <= tcfg["tool_deadline_seconds"]:
+            tool_ok = True
+            break
     # ---- activity (orthogonal; conservative)
     if proc == "exited":
         activity = "exited"
@@ -389,39 +567,53 @@ def classify_task(tcfg, tstate, snap, report, proc, now, th):
         activity = "waiting_input"
     elif running:
         activity = "tool_running"
-    elif proc == "alive":
-        activity = "generating"
     else:
-        activity = "unknown"  # never invent progress without evidence
-    # ---- health
-    anchor = step_ts if step_ts is not None else tstate["registered_at"]
+        # a live PID alone never proves generation -> unknown
+        activity = "unknown"
+    # ---- health (step clock recomputed from THIS active-branch snapshot)
+    useful = step_ts if tool_step is None else (
+        tool_step if step_ts is None else max(step_ts, tool_step))
+    anchor = useful if useful is not None else tstate["registered_at"]
     age = max(0.0, now - anchor)
-    errs = [e for e in (snap.get("recent_errors") or [])
-            if e.get("ts_valid") and isinstance(e.get("ts"), (int, float))
-            and (step_ts is None or e["ts"] > step_ts)]
+    errs = []
+    for e in snap.get("recent_errors") or []:
+        ets = _valid_ts(e, now)
+        if ets is not None and (useful is None or ets > useful):
+            errs.append((e, ets))
     view["errors_recent"] = len(errs)
-    if (status in ("fault", "backlog") or bootstrap or mismatch
-            or snap.get("session_fault")):
-        health, reason = "unknown", ("session_changed" if mismatch else
-                                     "adapter_" + str(status))
+    if mismatch:
+        health, reason = "unknown", "session_changed"
+    elif status in ("fault", "backlog"):
+        health, reason = "unknown", "adapter_" + str(status)
+    elif snap.get("session_fault"):
+        health, reason = "unknown", "adapter_fault"
+    elif bootstrap:
+        health, reason = "unknown", "adapter_bootstrap"
+    elif un:
+        # adapter uncertainty persists until actual recovery; a clean poll
+        # after a critical unknown must NOT flip healthy on its own
+        health, reason = "unknown", "adapter_uncertain"
     elif age > th["no_step_seconds"] and not asks and not tool_ok:
+        # confirmed loop: SAME non-null assistant-error fingerprint, each
+        # matching error INSIDE the rolling window; unrelated newer errors
+        # never freshen an old group.
         fps = {}
-        for e in errs:  # only assistant errors carry fingerprints
+        for e, ets in errs:  # only assistant errors carry fingerprints
             fp = e.get("fingerprint")
-            if e.get("category") == "assistant_error" and fp:
+            if (e.get("category") == "assistant_error" and fp
+                    and now - ets <= th["retry_window_seconds"]):
                 fps[fp] = fps.get(fp, 0) + 1
         best = max(fps.values()) if fps else 0
-        latest = max((e["ts"] for e in errs), default=None)
         view["retry_fingerprint_count"] = best
-        if (best >= th["repeat_error_count"] and latest is not None
-                and now - latest <= th["retry_window_seconds"]):
+        if best >= th["repeat_error_count"]:
             health, reason = "confirmed_retry_loop", "same_error_fingerprint"
         else:
             health, reason = "suspect_stall", "no_step_timeout"
     elif errs:
         health, reason = "degraded", "errors_with_recent_step"
     else:
-        health, reason = "ok", "step_fresh" if step_ts else "awaiting_first_step"
+        health, reason = "ok", ("step_fresh" if useful is not None
+                                else "awaiting_first_step")
     if age > th["no_step_seconds"] and (asks or tool_ok) and health == "ok":
         reason = "ask_pending" if asks else "tool_within_deadline"
     view.update(health=health, activity=activity, reason=reason,
@@ -437,7 +629,12 @@ class _Lock:
         self.fd = None
 
     def __enter__(self):
-        self.fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
+        flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            self.fd = os.open(self.path, flags, 0o600)
+        except OSError as e:
+            raise ConfigError("sidecar_refused" if e.errno == errno.ELOOP
+                              else "observer_locked")
         try:
             fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
@@ -467,7 +664,7 @@ class Observer:
 
     def load_state(self):
         """Corruption is fatal (fail-safe): never reset baselines silently."""
-        data = _read_json(self.state_path, 1 << 22)
+        data = _read_json(self.state_path, MAX_STATE_BYTES)
         if data is None and os.path.exists(self.state_path):
             raise ConfigError("state_corrupt")
         if data is not None and (data.get("v") != STATE_VERSION
@@ -477,10 +674,21 @@ class Observer:
                               "removed": [], "journal": []}
 
     def save(self, views):
-        _atomic_write(self.state_path, _dumps(self.state))
-        _atomic_write(self.snap_path, _dumps({
+        """Atomic persist, byte-bound BEFORE any write.
+
+        On bound breach nothing is written: the previous state and snapshot
+        stay untouched and the caller fails with `state_capacity` (a safe,
+        recoverable code), never with a self-inflicted `state_corrupt`.
+        """
+        state_text = _dumps(self.state)
+        snap_text = _dumps({
             "v": STATE_VERSION, "written_at": self.clock(),
-            "config_digest": self.digest, "tasks": views}))
+            "config_digest": self.digest, "tasks": views})
+        if (len(state_text.encode("utf-8")) > MAX_STATE_BYTES
+                or len(snap_text.encode("utf-8")) > MAX_STATE_BYTES):
+            raise ConfigError("state_capacity")
+        _atomic_write(self.state_path, state_text)
+        _atomic_write(self.snap_path, snap_text)
 
     def _tstate(self, tcfg, now):
         """Task state; attempt change resets adapter/binding, never baseline."""
@@ -533,7 +741,7 @@ class Observer:
               "retry_window_seconds": cfg["retry_window_seconds"],
               "repeat_error_count": cfg["repeat_error_count"]}
         prev = {}
-        old = _read_json(self.snap_path, 1 << 22)
+        old = _read_json(self.snap_path, MAX_STATE_BYTES)
         if old and old.get("config_digest") == self.digest:
             prev = {v["task"]: v for v in old.get("tasks", [])
                     if isinstance(v, dict) and "task" in v}
@@ -553,9 +761,20 @@ class Observer:
                 ts["session_id"] = session.get("header_id")
             bound = ts.get("session_id")
             cp_issues = []
+            cp = ts.get("checkpoint")
+            if (cp and bound and tcfg["candidate"] is not None
+                    and (cp.get("session_id") != bound
+                         or cp.get("candidate") != tcfg["candidate"]
+                         or cp.get("task") != tcfg["task"]
+                         or cp.get("attempt") != tcfg["attempt"])):
+                # foreign/legacy record: identity evidence retracts it; it
+                # must never anchor the progress clock forever
+                ts["checkpoint"] = None
+                cp_issues.append("persisted:foreign_identity")
             for path in tcfg["checkpoint_files"]:
                 rec, why = read_checkpoint(path, tcfg, bound,
-                                           ts.get("checkpoint"), now)
+                                           ts.get("checkpoint"), now,
+                                           baseline=ts["registered_at"])
                 if rec:
                     ts["checkpoint"] = rec  # monotonic (see read_checkpoint)
                 elif why not in ("", "replay"):
@@ -566,8 +785,14 @@ class Observer:
             ts["artifacts"] = sigs
             proc = process_verdict(tcfg["process"])
             view = classify_task(tcfg, ts, snap, report, proc, now, th)
+            cp_now = ts.get("checkpoint")
             view.update(
-                checkpoint_id=(ts.get("checkpoint") or {}).get("checkpoint_id"),
+                checkpoint_id=(cp_now or {}).get("checkpoint_id"),
+                # past-attempt record is explicitly historical, never a
+                # confirmation of the CURRENT candidate
+                checkpoint_historical=bool(
+                    cp_now and cp_now.get("attempt")
+                    and cp_now.get("attempt") != tcfg["attempt"]),
                 artifacts_changed=[] if first_art else changed_art,
                 artifact_unverifiable=bad_art, checkpoint_issues=cp_issues,
                 adapter={"status": report.get("status"),
@@ -648,7 +873,7 @@ def change_line(change):
 
 
 def _load_snapshot(obs):
-    snap = _read_json(obs.snap_path, 1 << 22)
+    snap = _read_json(obs.snap_path, MAX_STATE_BYTES)
     if snap is None:
         raise ConfigError("state_corrupt" if os.path.exists(obs.snap_path)
                           else "no_snapshot")
@@ -661,7 +886,7 @@ def _load_snapshot(obs):
 
 def _cmd_poll(args):
     cfg = load_config(args.config, now=time.time())
-    os.makedirs(cfg["sidecar_dir"], exist_ok=True)
+    prepare_sidecar(cfg)
     with _Lock(cfg["sidecar_dir"]):
         obs = Observer(cfg)
         obs.load_state()
@@ -673,7 +898,7 @@ def _cmd_poll(args):
 
 def _cmd_watch(args):
     cfg = load_config(args.config, now=time.time())
-    os.makedirs(cfg["sidecar_dir"], exist_ok=True)
+    prepare_sidecar(cfg)
     stop = {"flag": False}
 
     def _sig(_n, _f):

@@ -199,7 +199,62 @@ class ClassifyTests(unittest.TestCase):
                           "ts": T0 + 990, "ts_valid": True}
         v = classify(s)
         self.assertIsNone(v["last_tool_completed_at"])
+        self.assertEqual(v["last_tool_outcome"], "failed")
         self.assertEqual(v["health"], "suspect_stall")
+
+    def test_null_is_error_never_success(self):
+        s = snap_base()  # corrected adapter: is_error null = unknown outcome
+        s["last_tool"] = {"tool_call_id": "c1", "name": "Write",
+                          "name_class": "tool", "is_error": None,
+                          "ts": T0 + 990, "ts_valid": True}
+        v = classify(s)
+        self.assertIsNone(v["last_tool_completed_at"])
+        self.assertEqual(v["last_tool_outcome"], "unknown")
+        self.assertEqual(v["health"], "suspect_stall")  # never refreshes age
+
+    def test_successful_tool_is_useful_step(self):
+        s = snap_base()
+        s["last_tool"] = {"tool_call_id": "c1", "name": "Write",
+                          "name_class": "tool", "is_error": False,
+                          "ts": T0 + 990, "ts_valid": True}
+        v = classify(s)
+        self.assertEqual(v["last_tool_completed_at"], T0 + 990)
+        self.assertEqual(v["last_tool_outcome"], "successful")
+        self.assertEqual(v["health"], "ok")  # tool success refreshes age
+
+    def test_fresh_unrelated_error_never_freshens_old_fingerprint(self):
+        s = snap_base()
+        s["last_success"] = success("e1", T0)
+        # 3 same-fp errors OUTSIDE the 600s window + 1 fresh unrelated error
+        s["recent_errors"] = [aerror("fpX", T0 + 10 + i) for i in range(3)]
+        s["recent_errors"].append(aerror(None, T0 + 995, "tool_error"))
+        v = classify(s)
+        self.assertEqual(v["health"], "suspect_stall")
+        self.assertEqual(v["retry_fingerprint_count"], 0)
+        # control: without the fresh unrelated error, same verdict
+        s["recent_errors"] = [aerror("fpX", T0 + 10 + i) for i in range(3)]
+        self.assertEqual(classify(s)["health"], "suspect_stall")
+
+    def test_uncertainty_holds_unknown_until_recovery(self):
+        s = snap_base()
+        s["last_success"] = success("e1", T0 + 900)  # fresh step, clean poll
+        s["uncertainty"] = {"dedupe_evicted": True}
+        v = classify(s)
+        self.assertEqual((v["health"], v["reason"]),
+                         ("unknown", "adapter_uncertain"))
+
+    def test_bootstrap_reason_explicit(self):
+        v = classify(snap_base(), rep=report(status="ok", bootstrap=True))
+        self.assertEqual((v["health"], v["reason"]),
+                         ("unknown", "adapter_bootstrap"))
+
+    def test_time_bearing_api_fails_closed(self):
+        for bad in (NOW + 1, float("inf"), float("nan"), "soon", True):
+            s = snap_base()
+            s["last_success"] = success("e1", bad)  # ts_valid lies
+            v = classify(s)
+            self.assertIsNone(v["last_successful_response_at"], bad)
+            self.assertEqual(v["health"], "suspect_stall", bad)
 
     def test_activity_precedence_and_unknown(self):
         s = snap_base()
@@ -209,8 +264,9 @@ class ClassifyTests(unittest.TestCase):
             {"tool_call_id": "c2", "kind": "ask_waiting", "started": True,
              "ts": NOW, "ts_valid": True, "entry_id": "e2"}]
         self.assertEqual(classify(s, proc="alive")["activity"], "waiting_input")
+        # live PID alone NEVER proves generation
         self.assertEqual(classify(snap_base(), proc="alive")["activity"],
-                         "generating")
+                         "unknown")
         self.assertEqual(classify(snap_base(), proc="exited")["activity"],
                          "exited")
 
@@ -250,6 +306,41 @@ class ProcessTests(unittest.TestCase):
     def test_inaccessible_proc_unknown(self):
         self.assertEqual(cw.process_verdict(
             self._self_spec(), boot_reader=lambda: None), "unknown")
+
+    def test_stat_none_unknown_never_exited(self):
+        # injectable stat_reader None = inaccessible (hidepid/EACCES)
+        self.assertEqual(cw.process_verdict(
+            self._self_spec(), stat_reader=lambda p: None), "unknown")
+
+    def test_stat_gone_sentinel_exited(self):
+        self.assertEqual(cw.process_verdict(
+            self._self_spec(), stat_reader=lambda p: cw.PID_GONE), "exited")
+
+    def test_stat_reader_oserror_unknown(self):
+        def boom(_pid):
+            raise PermissionError(13, "EACCES")
+        self.assertEqual(cw.process_verdict(
+            self._self_spec(), stat_reader=boom), "unknown")
+
+    def test_default_reader_distinguishes_eacces_from_enoent(self):
+        import builtins
+        import unittest.mock as mock
+        spec = self._self_spec()
+        real_open = builtins.open
+
+        def fake_open(path, *a, **k):
+            if str(path).endswith("/stat"):
+                raise PermissionError(13, "EACCES")
+            return real_open(path, *a, **k)
+        with mock.patch("builtins.open", side_effect=fake_open):
+            self.assertEqual(cw.process_verdict(spec), "unknown")
+
+        def gone_open(path, *a, **k):
+            if str(path).endswith("/stat"):
+                raise FileNotFoundError(2, "ENOENT")
+            return real_open(path, *a, **k)
+        with mock.patch("builtins.open", side_effect=gone_open):
+            self.assertEqual(cw.process_verdict(spec), "exited")
 
 
 class CheckpointTests(unittest.TestCase):
@@ -310,6 +401,37 @@ class CheckpointTests(unittest.TestCase):
         self.assertEqual(self._read()[1], "shape")
         self._write(kind="mystery")
         self.assertEqual(self._read()[1], "shape")
+
+    def test_unbound_identity_never_confirms(self):
+        self._write()
+        # no positively bound session -> no confirmation, no skip
+        rec, why = cw.read_checkpoint(self.path, tcfg(candidate="cand"),
+                                      None, None, NOW)
+        self.assertEqual((rec, why), (None, "unbound_identity"))
+        # no configured candidate -> same, even with a bound session
+        rec, why = cw.read_checkpoint(self.path, tcfg(candidate=None),
+                                      "sess-1", None, NOW)
+        self.assertEqual((rec, why), (None, "unbound_identity"))
+
+    def test_naive_timestamp_rejected(self):
+        self._write(completed_at="2023-11-14T12:00:00")  # no tzinfo
+        self.assertEqual(self._read()[1], "timestamp")
+
+    def test_future_within_old_skew_now_rejected(self):
+        self._write(completed_at=iso(NOW + 60), checkpoint_id="cp2")
+        self.assertEqual(self._read()[1], "timestamp")  # no future grace
+
+    def test_predates_registration_rejected(self):
+        self._write(completed_at=iso(T0 - 100), checkpoint_id="cp2")
+        self.assertEqual(self._read()[1], "timestamp")
+
+    def test_confirmed_record_persists_full_identity(self):
+        self._write()
+        rec, why = self._read()
+        self.assertEqual(why, "")
+        self.assertEqual((rec["task"], rec["attempt"]), ("t1", "a1"))
+        self.assertEqual(rec["session_id"], "sess-1")
+        self.assertEqual(rec["candidate"], "cand")
 
 
 class ArtifactTests(unittest.TestCase):
@@ -396,6 +518,28 @@ class ConfigTests(unittest.TestCase):
         t = dict(tcfg(session_log=os.path.join(self.root, "s.jsonl"),
                       registered_at=iso(T0), checkpoint_files=[link]))
         self._invalid(tasks=[t])
+
+    def test_session_log_aliasing_managed_output_rejected(self):
+        t = dict(tcfg(session_log=os.path.join(self.root, ".watch",
+                                               "state.json"),
+                      registered_at=iso(T0)))
+        self._invalid(tasks=[t])
+
+    def test_checkpoint_inside_sidecar_rejected(self):
+        t = dict(tcfg(session_log=os.path.join(self.root, "s.jsonl"),
+                      registered_at=iso(T0),
+                      checkpoint_files=[os.path.join(self.root, ".watch",
+                                                     "cp.json")]))
+        self._invalid(tasks=[t])
+
+    def test_config_inside_sidecar_rejected(self):
+        with open(self._cfg()) as f:
+            doc = json.load(f)
+        inner = os.path.join(self.root, ".watch", "cfg.json")
+        with open(inner, "w") as f:
+            json.dump(doc, f)
+        with self.assertRaises(cw.ConfigError):
+            cw.load_config(inner, now=NOW)
 
 
 class BoundedLineTests(unittest.TestCase):
@@ -694,27 +838,47 @@ class CliIntegrationTests(CliBase):
     def test_checkpoint_confirm_and_replay_via_cli(self):
         cp = os.path.join(self.root, "cp.json")
         doc = {"schema_version": 1, "task": "t1", "attempt": "a1",
+               "session_id": "e0", "candidate": "cand",
+               "checkpoint_id": "cp1", "completed_at": iso(time.time()),
+               "kind": "runtime_scenario", "verified": True}
+        write_rows(self.log, [hdr(), asst("e1", "e0")])
+        with open(cp, "w") as f:
+            json.dump(doc, f)
+        cfg = self.config([self.task(checkpoint_files=[cp],
+                                     candidate="cand",
+                                     registered_at=iso(time.time() - 60))])
+        v = self._poll(cfg)["tasks"][0]
+        self.assertEqual(v["checkpoint_id"], "cp1")
+        self.assertFalse(v["checkpoint_historical"])
+        progress = v["last_progress_at"]
+        self.assertIsNotNone(progress)
+        doc["completed_at"] = iso(time.time())  # touch: same id
+        with open(cp, "w") as f:
+            json.dump(doc, f)
+        v = self._poll(cfg)["tasks"][0]
+        self.assertEqual(v["last_progress_at"], progress)  # no replay
+        doc.update(checkpoint_id="cp2", completed_at=iso(time.time()))
+        with open(cp, "w") as f:
+            json.dump(doc, f)
+        v = self._poll(cfg)["tasks"][0]
+        self.assertEqual(v["checkpoint_id"], "cp2")
+
+    def test_checkpoint_unbound_identity_no_confirm_via_cli(self):
+        cp = os.path.join(self.root, "cp.json")
+        doc = {"schema_version": 1, "task": "t1", "attempt": "a1",
                "session_id": "e0", "candidate": None,
                "checkpoint_id": "cp1", "completed_at": iso(time.time()),
                "kind": "runtime_scenario", "verified": True}
         write_rows(self.log, [hdr(), asst("e1", "e0")])
         with open(cp, "w") as f:
             json.dump(doc, f)
-        cfg = self.config([self.task(checkpoint_files=[cp])])
+        # candidate not configured: foreign record must NOT anchor progress
+        cfg = self.config([self.task(checkpoint_files=[cp],
+                                     registered_at=iso(time.time() - 60))])
         v = self._poll(cfg)["tasks"][0]
-        self.assertEqual(v["checkpoint_id"], "cp1")
-        progress = v["last_progress_at"]
-        self.assertIsNotNone(progress)
-        doc["completed_at"] = iso(time.time() + 10)  # touch: same id
-        with open(cp, "w") as f:
-            json.dump(doc, f)
-        v = self._poll(cfg)["tasks"][0]
-        self.assertEqual(v["last_progress_at"], progress)  # no replay
-        doc.update(checkpoint_id="cp2")
-        with open(cp, "w") as f:
-            json.dump(doc, f)
-        v = self._poll(cfg)["tasks"][0]
-        self.assertEqual(v["checkpoint_id"], "cp2")
+        self.assertIsNone(v["checkpoint_id"])
+        self.assertIsNone(v["last_progress_at"])
+        self.assertIn("cp.json:unbound_identity", v["checkpoint_issues"])
 
     def test_watch_loop_change_and_heartbeat(self):
         import select
@@ -765,6 +929,156 @@ class CliIntegrationTests(CliBase):
             proc.send_signal(signal.SIGTERM)  # only the test process
             rc = proc.wait(timeout=10)
         self.assertEqual(rc, 0, proc.stderr.read())
+
+
+class StateCapacityTests(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = os.path.join(self.tmp.name, ".watch")
+        os.makedirs(self.dir)
+
+    def _observer(self):
+        obs = cw.Observer({"sidecar_dir": self.dir})
+        obs.state = {"v": cw.STATE_VERSION, "tasks": {},
+                     "removed": [], "journal": []}
+        return obs
+
+    def test_write_over_capacity_refused_old_files_untouched(self):
+        obs = self._observer()
+        obs.save([])
+        with open(obs.state_path) as f:
+            before_state = f.read()
+        with open(obs.snap_path) as f:
+            before_snap = f.read()
+        obs.state["tasks"]["big"] = {"blob": "y" * 8192}
+        saved = cw.MAX_STATE_BYTES
+        cw.MAX_STATE_BYTES = 4096
+        try:
+            with self.assertRaises(cw.ConfigError) as cm:
+                obs.save([])
+            self.assertEqual(str(cm.exception), "state_capacity")
+        finally:
+            cw.MAX_STATE_BYTES = saved
+        with open(obs.state_path) as f:  # no clobber of either sidecar
+            self.assertEqual(f.read(), before_state)
+        with open(obs.snap_path) as f:
+            self.assertEqual(f.read(), before_snap)
+
+    def test_oversized_state_read_stays_state_corrupt(self):
+        obs = self._observer()
+        with open(obs.state_path, "w") as f:
+            f.write('{"v": 1, "tasks": {}}')
+        saved = cw.MAX_STATE_BYTES
+        cw.MAX_STATE_BYTES = 8  # legal-shape file over the read cap
+        try:
+            with self.assertRaises(cw.ConfigError) as cm:
+                obs.load_state()
+            self.assertEqual(str(cm.exception), "state_corrupt")
+        finally:
+            cw.MAX_STATE_BYTES = saved
+        with open(obs.state_path) as f:  # untouched
+            self.assertEqual(f.read(), '{"v": 1, "tasks": {}}')
+
+
+class ForeignCheckpointTests(unittest.TestCase):
+
+    def test_persisted_foreign_checkpoint_retracted(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = os.path.join(tmp.name, "camp")
+        sidecar = os.path.join(root, ".watch")
+        os.makedirs(sidecar)
+        log = os.path.join(root, "s.jsonl")
+        write_rows(log, [hdr()])
+        cfg = {"sidecar_dir": sidecar, "no_step_seconds": 600.0,
+               "retry_window_seconds": 600.0, "repeat_error_count": 3,
+               "tasks": [tcfg(session_log=log, session_id="REAL",
+                              candidate="cand", registered_at=T0)]}
+        obs = cw.Observer(cfg)
+        obs.state = {"v": cw.STATE_VERSION, "removed": [], "journal": [],
+                     "tasks": {"t1": {
+                         "attempt": "a1", "registered_at": T0,
+                         "session_id": "REAL",
+                         "checkpoint": {"checkpoint_id": "cpF",
+                                        "completed_at": T0 + 100,
+                                        "kind": "review_checkpoint",
+                                        "task": "t1", "attempt": "a1",
+                                        "session_id": "FOREIGN",
+                                        "candidate": "cand"},
+                         "adapter": None, "artifacts": None}}}
+        views, _ = obs.poll_cycle()
+        self.assertIsNone(obs.state["tasks"]["t1"]["checkpoint"])
+        self.assertIn("persisted:foreign_identity",
+                      views[0]["checkpoint_issues"])
+        self.assertIsNone(views[0]["last_progress_at"])
+
+
+class CliSidecarTests(CliBase):
+
+    def test_unmanaged_sidecar_dir_refused(self):
+        with open(os.path.join(self.sidecar, "notes.txt"), "w") as f:
+            f.write("unmanaged content")
+        cfg = self.config([self.task()])
+        r = self.run_cli("poll", "--config", cfg)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(json.loads(r.stdout)["error"], "sidecar_unmanaged")
+
+    def test_symlinked_state_refused_never_followed(self):
+        target = os.path.join(self.root, "elsewhere.json")
+        with open(target, "w") as f:
+            f.write("{}")
+        os.symlink(target, os.path.join(self.sidecar, "state.json"))
+        cfg = self.config([self.task()])
+        r = self.run_cli("poll", "--config", cfg)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(json.loads(r.stdout)["error"], "sidecar_refused")
+        with open(target) as f:  # write never passed through the link
+            self.assertEqual(f.read(), "{}")
+
+    def test_marker_written_then_managed_sidecar_reused(self):
+        write_rows(self.log, [hdr(), asst("e1", "e0")])
+        cfg = self.config([self.task()])
+        self.assertEqual(self.run_cli("poll", "--config", cfg).returncode, 0)
+        with open(os.path.join(self.sidecar, cw.MARKER_NAME)) as f:
+            self.assertEqual(f.read(), cw.MARKER_CONTENT)
+        # second poll: marker present, sidecar accepted
+        self.assertEqual(self.run_cli("poll", "--config", cfg).returncode, 0)
+
+    def test_session_log_aliasing_managed_output_rejected(self):
+        cfg = self.config([self.task(
+            log=os.path.join(self.sidecar, "state.json"))])
+        r = self.run_cli("poll", "--config", cfg)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(json.loads(r.stdout)["error"], "config_invalid")
+
+
+class CliLongSessionTests(CliBase):
+
+    def test_state_survives_several_long_sessions(self):
+        tasks = []
+        for i in range(4):
+            log = os.path.join(self.root, "big%d.jsonl" % i)
+            rows, prev = [hdr()], "e0"
+            for j in range(4200):
+                eid = "e%d-%d" % (i, j + 1)
+                rows.append(asst(eid, prev))
+                prev = eid
+            write_rows(log, rows)
+            tasks.append(self.task("big-%d" % i, log=log))
+        cfg = self.config(tasks)
+        for _ in range(4):  # several polls to drain bounded reads
+            r = self.run_cli("poll", "--config", cfg)
+            self.assertEqual(r.returncode, 0, r.stderr)
+        spath = os.path.join(self.sidecar, "state.json")
+        self.assertLess(os.path.getsize(spath), cw.MAX_STATE_BYTES)
+        with open(spath) as f:  # always re-loadable: no state_corrupt death
+            st = json.load(f)
+        self.assertEqual(sorted(st["tasks"]),
+                         ["big-0", "big-1", "big-2", "big-3"])
+        r = self.run_cli("status", "--config", cfg)
+        self.assertEqual(r.returncode, 0, r.stderr)
 
 
 if __name__ == "__main__":
