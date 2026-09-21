@@ -22,8 +22,9 @@ false-health bug this skill guards against.
   has `completedAt` or usage data.
 - `model_usage`, `custom` service events, title/model-change/compaction events, and
   aborted/discarded branches are NOT progress.
-- Tool completion: a tool result closes a tool call; `isError` is tracked separately -
-  a completed failing tool is an error observation, never a success.
+- Tool completion: a tool result closes a tool call; only `isError` strictly `false`
+  counts as success - a completed failing tool is an error observation, and a
+  null/missing `isError` is unknown; neither is ever a success.
 - Only the CURRENT live parent branch counts. `branch_summary` entries such as
   discarded-entry branches record abandoned work; they never create progress.
 - Provider-global errors (for example a gateway 500) cannot be attributed to a specific
@@ -72,8 +73,9 @@ kill it. A live long-running command within its deadline is not a stall.
   executes shell commands; no LLM calls, no network. Remediation stays with the
   coordinator: preserve dirty work, fence the old writer, then restart; fallback model
   only if approved; no infrastructure changes.
-- Writes ONLY its own sidecar directory (snapshot, cursor/state, transition journal) -
-  never the canonical campaign STATE/TODO/EVENTS. Sidecars and output carry no raw
+- Writes ONLY its own sidecar directory (snapshot, cursor/state, transition journal,
+  ownership marker) - never the canonical campaign STATE/TODO/EVENTS, and never a
+  sidecar aliased with any input. Sidecars and output carry no raw
   messages, tool arguments, content, or error strings; errors surface as aggregated
   structural fingerprints (category or irreversible hash). Bounded incremental input
   and bounded output. Malformed, rotated, truncated, partial, or schema-unknown input
@@ -111,13 +113,17 @@ campaign_watch.py diagnose --config PATH [--task T]  cached per-task detail
   Over-capacity task lists are truncated to a stable task-sorted prefix with an
   `omitted` count; `counts` always covers ALL tasks; JSON is never broken.
 - Errors are safe JSON: `{"v":1,"kind":"error","error":CODE}` with exit code 2 -
-  codes `config_unreadable`, `config_invalid`, `state_corrupt`, `no_snapshot`,
-  `config_changed`, `observer_locked`, `task_unknown`, `internal`. No tracebacks, host
+  codes `config_unreadable`, `config_invalid`, `state_corrupt`, `state_capacity`,
+  `no_snapshot`, `config_changed`, `observer_locked`, `sidecar_unmanaged`,
+  `sidecar_refused`, `task_unknown`, `internal`. No tracebacks, host
   paths, or secret strings ever appear. `--help` is normal argparse.
 - `status`/`diagnose` are read-only (no lock, no writes); a snapshot older than
   `stale_seconds` is reported with every health forced to `unknown`
   (`reason: stale_snapshot`). Editing the config after a poll yields `config_changed`
-  until the next poll.
+  until the next poll. Health-`unknown` reasons include `stale_snapshot`,
+  `session_changed`, `adapter_bootstrap`, `adapter_fault`, and `adapter_uncertain`
+  (non-empty adapter uncertainty holds health at `unknown` until actual adapter
+  recovery - one clean poll cannot flip it back on its own).
 
 ### Config file (`templates/WATCH.json`, schema_version 1)
 
@@ -134,8 +140,8 @@ the code applies no defaults; the values below are the template's defaults:
 - `repeat_error_count` 3: integer 1..100.
 - `sidecar_dir`: absolute path, <=512 chars. The campaign root is
   `dirname(sidecar_dir)`; checkpoint/artifact allowlists must resolve inside it.
-- `tasks`: 1..1024 entries; excess is REJECTED (`config_invalid`), never silently
-  ignored. Per task:
+- `tasks`: 1..64 entries; excess is REJECTED (`config_invalid`), never silently
+  ignored (serialized state is also byte-capped - sidecar files below). Per task:
   - `task`, `attempt`: ids matching `^[A-Za-z0-9][A-Za-z0-9_.\-]{0,127}$`, unique per
     config. `phase` optional (same charset, <=64).
   - `session_log`: absolute path to the OMP session JSONL, <=512 chars.
@@ -155,16 +161,26 @@ the code applies no defaults; the values below are the template's defaults:
     => `unknown`, NEVER `exited`. boot_id mismatch (pre-reboot) or start_ticks
     mismatch (PID reuse) => `exited`. An omitted process does not override JSONL
     semantics.
+- Path aliasing is rejected up front with `config_invalid`, before any sidecar
+  creation or write: the config file, every `session_log`, and every
+  checkpoint/artifact allowlist entry must not equal a managed output (`state.json`,
+  `snapshot.json`, `observer.lock`, `.watch_managed`), the sidecar dir itself, or a
+  path inside it (realpath-resolved; symlink bypass impossible).
 
 ### No-step age vs semantic progress vs artifact signals
 
 Keep these separate when reading output:
 
-- `no_step_age` is the age of the last valid successful assistant event (genuine event
-  timestamp, else `registered_at`). It drives `suspect_stall`/`confirmed_retry_loop`.
-  Failed tool results never refresh it; `live:false` successes anchor age by their
-  genuine event ts but manufacture no NOW progress; retracted-branch successes are
-  dropped by the adapter.
+- `no_step_age` is the age of the last useful step: the maximum of the last valid
+  successful assistant event and the last valid successful current-branch tool
+  completion (genuine event timestamps, else `registered_at`). It drives
+  `suspect_stall`/`confirmed_retry_loop`. Failed or null/unknown-outcome tool results
+  never refresh it - `last_tool_outcome` is the bounded enum
+  `successful|failed|unknown` (null when there is no tool evidence), and only a
+  successful completion sets `last_tool_completed_at`; `live:false` successes anchor
+  age by their genuine event ts but manufacture no NOW progress; retracted-branch
+  successes are dropped by the adapter. The step clock is recomputed from each poll's
+  active-branch snapshot, never carried over from the previous one.
 - `last_progress_at` moves ONLY on a confirmed structured checkpoint (below). Nothing
   else sets it.
 - Artifact diffs (sha256+size, <=1MiB/file) are candidate signals only, surfaced as
@@ -175,8 +191,18 @@ Keep these separate when reading output:
 
 `{schema_version:1,task,attempt,session_id,candidate,checkpoint_id,completed_at,kind,
 verified:true}` with kind `runtime_scenario|review_checkpoint|artifact_checkpoint`.
-Identity must match task/attempt/bound-session/candidate; same id or older ts is a
-replay and ignored; a confirmed checkpoint is monotonic across restarts and attempts.
+Confirmation REQUIRES a positively bound session id AND a configured non-null
+candidate - until both exist the verdict is the diagnostic `unbound_identity`
+(checkpoint issue, never a silent skip); file existence alone never confirms.
+Identity must match exactly (task/attempt/session_id/candidate); `completed_at` must
+be aware UTC (naive rejected), strictly `<= now` (no future grace), and not older
+than the `registered_at` baseline - violations are reason `timestamp`. Same id or
+older ts is a replay and ignored; a confirmed checkpoint is monotonic across
+restarts and attempts. The persisted checkpoint is re-validated against the current
+identity on every poll: a positive mismatch retracts it
+(`persisted:foreign_identity` in `checkpoint_issues`, no longer anchoring
+`last_progress_at`), and a record from a past attempt may persist only as
+`checkpoint_historical: true` - never a confirmation of the current candidate.
 `verified:true` is the producer's attestation only - the watcher does not verify the
 underlying claim. Checkpoint files are read-only inputs; the producer (executor or
 reviewer per procedure) writes them, the watcher never does.
@@ -188,7 +214,16 @@ sources: `state.json` (baselines, adapter cursors, confirmed checkpoints, remove
 ring <=128, transition journal <=256 metadata-only; atomic replace; corruption =>
 `state_corrupt` with the file untouched, baselines kept), `snapshot.json` (`written_at`,
 `config_digest`, task views; atomic), `observer.lock` (fcntl flock, non-blocking,
-single writer for poll/watch, crash-safe; status/diagnose take no lock). Removed tasks
+single writer for poll/watch, crash-safe; status/diagnose take no lock), and the
+ownership marker `.watch_managed` (content `campaign_watch/1`). State and snapshot
+are bounded by an explicit 32 MiB cap on BOTH read and write: a write whose
+serialized form would exceed it fails with `state_capacity` and leaves the previous
+state and snapshot untouched - the watcher never writes a state it cannot reload.
+On poll/watch a pre-existing sidecar dir is accepted only if it carries the marker
+or contains nothing but known managed files (fresh or legacy sidecar; crash-leftover
+`*.tmp.<pid>` tolerated) - anything else, including the campaign root holding
+unmanaged files, is `sidecar_unmanaged`; managed outputs must be regular files and
+symlinks are refused (`sidecar_refused`, no-follow opens). Removed tasks
 are pruned from the snapshot but their baseline (registered_at/session/checkpoint)
 resumes on re-add: pruning and re-adding or relabeling an attempt cannot reset the
 no-progress budget.
@@ -208,26 +243,34 @@ no-progress budget.
 
 Nothing auto-starts: the scripts run only when explicitly invoked.
 
-### Known constraints and open concerns (accurate as of CLI commit e080ba1)
+### Known constraints
 
 - `observer.lock` uses fcntl flock: POSIX only.
 - The process probe is Linux-only (/proc) and works only in the same PID namespace;
   elsewhere process and activity stay `unknown`.
-- OPEN CONCERN: the current source labels activity `generating` when a validated live
-  process exists and no ask/tool is pending - a live PID alone cannot prove the model
-  is generating. Coordinator review must fix or relabel this before release; do not
-  treat `generating` as proof of model activity.
-- OPEN CONCERN: checkpoint `completed_at` currently tolerates up to 300s of future
-  skew; the desired policy is no future actual progress at all. Flagged to the
-  coordinator for correction.
-- Retry-loop confirmation needs adapter error fingerprints; runtimes that never emit
-  them can at most reach `suspect_stall`.
+- Activity is asserted only from current-operation evidence: a live PID with no
+  pending ask or running tool reports activity `unknown`, never `generating` - a
+  live PID alone cannot prove the model is generating. `idle` is likewise not
+  asserted (no known-stop signal); both stay in the vocabulary for adapters that
+  can prove them.
+- Checkpoint `completed_at` is strict: aware UTC, `<= now`, and not older than the
+  registration baseline - there is no future grace for progress.
+- Retry-loop confirmation needs adapter error fingerprints, each matching error
+  counted only while inside the rolling `retry_window_seconds` (unrelated newer
+  errors never freshen an old group); runtimes that never emit them can at most
+  reach `suspect_stall`.
 - Invalid, corrupt, stale, rotated, or truncated input fails safe to `unknown`;
   bounded parent history (removed ring <=128, journal <=256) is explicit.
-- Validation status: exercised against adapter fixtures (adapter 919e864,
-  simple-envelope). A real-session integration check against the corrected adapter is
-  still required before relying on classification against live OMP sessions; no
-  real-session PASS is claimed here.
+- Adapter ancestry gap: an oversized/malformed row or an unprovable parent latches
+  a critical gap - adapter status stays `unknown` for the rest of that file
+  generation and resets only on a rebuild (log identity change or truncation),
+  never by later valid rows.
+- Validation status: the adapter implements the OMP session-log schema version 3
+  (the format emitted by OMP 18.2.6) as a bounded, metadata-only incremental
+  reader, exercised against recorded real OMP sessions and synthetic edge cases
+  (oversized rows, unprovable ancestry, deep chains). No end-to-end classification
+  PASS against live OMP sessions is claimed for the integrated watcher; bounded
+  fail-safe behavior is the contract.
 
 ### Relationship to the attempt budget (procedural, not CLI)
 
