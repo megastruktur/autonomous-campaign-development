@@ -601,7 +601,9 @@ class TestFaultsAndRobustness(Base):
         self.assertEqual(s["last_success"]["entry_id"], "e3")
         self.assertNotIn("xxxx", json.dumps(s))  # payload never retained
 
-    def test_oversized_row_envelope_keeps_descendant_ancestry(self):
+    def test_oversized_row_gap_fail_closed_unknown(self):
+        # no envelope sniff: the skipped row is a critical gap; descendants
+        # resolve to explicit unknown, never a fresh live head/last_success
         huge = json.dumps(row("ex", "e1", iso(T0 + 1), "message",
                               message={"role": "assistant", "stopReason": "stop",
                                        "content": [], "blob": "y" * 9000}))
@@ -613,15 +615,85 @@ class TestFaultsAndRobustness(Base):
             assistant("e2", "ex", t=iso(T0 + 2)),
             assistant("e3", "e2", t=iso(T0 + 3)),
         ], mode="a")
-        rep = self.adapter(max_row_bytes=1024).poll(self.path)
+        a = self.adapter(max_row_bytes=1024)
+        rep = a.poll(self.path)
         self.assertIn("oversized_row", rep["new_faults"])
         s = rep["summary"]
-        self.assertEqual(s["counters"]["oversized_envelope_recorded"], 1)
-        # descendants of the skipped row resolve: success continues past ex
-        self.assertEqual(s["counters"]["successful_assistant"], 3)
-        self.assertEqual(s["last_success"]["entry_id"], "e3")
-        self.assertEqual(s["uncertainty"]["ancestry_uncertain"], 0)
+        self.assertNotIn("oversized_envelope_recorded", s["counters"])
+        self.assertGreaterEqual(s["uncertainty"]["ancestry_uncertain"], 2)
+        self.assertTrue(s["uncertainty"]["ancestry_gap"])
+        self.assertTrue(s["uncertainty"]["unknown_seen"])
+        self.assertIsNone(s["last_success"])
         self.assertNotIn("yyy", json.dumps(s))
+        # the gap is latched for this generation: a subsequent empty poll
+        # is explicitly unknown, never a healthy "ok"
+        rep2 = a.poll(self.path)
+        self.assertEqual(rep2["status"], "unknown")
+        self.assertEqual(rep2["new_faults"], {})
+        self.assertTrue(rep2["summary"]["uncertainty"]["ancestry_gap"])
+        self.assertIsNone(rep2["summary"]["last_success"])
+
+    def test_oversized_nested_fake_id_descendant_stays_unknown(self):
+        # review blocker 1: >2MiB row whose head carries a nested fake "id"
+        # before the real envelope; the descendant must never become an
+        # authoritative healthy head, and no fresh last_success may appear
+        big = ('{"nested":{"id":"FAKE0"},"pad":"'
+               + "z" * (2 * 1024 * 1024)
+               + '","id":"eBIG0","parentId":"e0004"}')
+        rows = [header()]
+        parent = "e0"
+        for i in range(1, 6):
+            rows.append(assistant("e%d" % i, parent, t=iso(T0 + i)))
+            parent = "e%d" % i
+        write_rows(self.path, rows)
+        with open(self.path, "a") as f:
+            f.write(big + "\n")
+        write_rows(self.path, [
+            assistant("e6", "eBIG0", t=iso(T0 + 6)),
+            assistant("e7", "e6", t=iso(T0 + 7)),
+        ], mode="a")
+        a = self.adapter()
+        polls = 0
+        while True:
+            rep = a.poll(self.path)
+            polls += 1
+            if not rep["backlog"]:
+                break
+            self.assertLess(polls, 20)
+        self.assertIn("oversized_row", rep["summary"]["faults"])
+        s = rep["summary"]
+        self.assertIsNone(s["last_success"])  # no fresh healthy claim
+        self.assertGreaterEqual(s["uncertainty"]["ancestry_uncertain"], 1)
+        self.assertTrue(s["uncertainty"]["ancestry_gap"])
+        blob = json.dumps(a.export_state())
+        self.assertNotIn("FAKE0", blob)
+        # FAKE0 lives only inside the oversized payload (never sniffed);
+        # eBIG0 re-appears solely as e6's parentId from the valid row
+        self.assertNotIn("zzzz", blob)  # payload bytes never persisted
+        rep2 = a.poll(self.path)
+        self.assertEqual(rep2["status"], "unknown")
+        self.assertTrue(rep2["summary"]["uncertainty"]["ancestry_gap"])
+
+    def test_unbounded_discarded_root_rejected_never_persisted(self):
+        # review blocker 2: an arbitrary non-id discarded root must never be
+        # retained verbatim or reversibly in state or snapshot
+        import base64
+        bad_root = "R" * 200_000
+        write_rows(self.path, [
+            header(),
+            assistant("e1", "e0", stop="stop"),
+            branch_discard("b", "e1", bad_root),
+        ])
+        a = self.adapter()
+        rep = a.poll(self.path)
+        self.assertIn("branch_shape_unknown", rep["new_faults"])
+        state = a.export_state()
+        self.assertEqual(state["discarded"], [])
+        for blob in (json.dumps(state), json.dumps(rep["summary"])):
+            self.assertNotIn("RRRR", blob)
+            self.assertNotIn(base64.b64encode(b"RRRR").decode(), blob)
+        self.assertLess(len(json.dumps(state)), 50_000)
+        self.assertTrue(rep["summary"]["uncertainty"]["unknown_seen"])
 
     def test_deeply_nested_row_raises_no_recursion_crash(self):
         with open(self.path, "w") as f:

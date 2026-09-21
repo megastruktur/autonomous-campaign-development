@@ -12,13 +12,17 @@ Import API
     adapter2 = OmpSessionAdapter.from_state(state)        # cursor survives reload
     adapter.snapshot()                                    # sanitized semantic view
 
-`report` (dict): status in {"ok","backlog","fault"}; `backlog` bool;
+`report` (dict): status in {"ok","backlog","fault","unknown"}; `backlog` bool;
 backlog_bytes; new_bytes; events_processed; rebuilt reason or None;
 session_switch; bootstrap_pending; history_replayed; new_faults (kind->count);
 summary == snapshot() at poll end.  Any new fault-class observation
 (missing/unreadable input, malformed/oversized rows, unknown header/version,
 unknown event type or critical shape) yields status "fault": unknown is
-observable, never healthy.
+observable, never healthy.  Once a critical gap is latched for this file
+generation (oversized/malformed skipped record, or a parent that cannot be
+resolved), otherwise-healthy polls report status "unknown" — never a plain
+"ok" — until an explicit rebuild (rotation/truncation) starts a new
+generation.
 
 Persistence (state format 2): state carries file identity (st_dev/st_ino) +
 session header UUID + the consumed binary offset and bounded structural
@@ -84,16 +88,21 @@ recovered transient.
 
 Fail-safe decisions (conservative, documented): ancestry that cannot be
 resolved within the bounded retained chain counts as uncertain and does
-NOT count as success; assistant messages without a recognizable stopReason
-are "other" (neither success nor failure, unknown-flagged); unsupported
-session version poisons the scan (lines keep being consumed for cursor
-health, but no semantics); dedupe/branch structures are bounded and
-eviction raises an uncertainty flag rather than guessing.  Rows above
+NOT count as success — a parent missing from the retained map is never
+treated as a provable root, and a truncated or evicted chain is explicitly
+uncertain, never live; assistant messages without a recognizable
+stopReason are "other" (neither success nor failure, unknown-flagged);
+unsupported session version poisons the scan (lines keep being consumed
+for cursor health, but no semantics); dedupe/branch structures are bounded
+and eviction raises an uncertainty flag rather than guessing.  Rows above
 max_row_bytes (default 2 MiB — observed real rows reach ~150 KB) fail
-closed: the payload is never parsed or persisted, but the envelope head
-(id/parentId sniff, NOT a streaming parser) still feeds the parent map so
-descendants keep resolving.  Deeply nested rows that trip RecursionError
-count as malformed, never crash a poll.
+closed: the payload is never parsed, sniffed, or persisted; the skipped
+record latches a critical-gap uncertainty that persists for the rest of
+this file generation — later valid rows never "repair" the unknown branch,
+and subsequent empty polls report "unknown", not healthy.  A row whose
+parentId is absent (root row, e.g. session headers) still roots normally.
+Deeply nested rows that trip RecursionError count as malformed (also
+latching the gap), never crash a poll.
 
 OMP v3 shape assumptions, verified against real session logs: the first
 row may be an envelopeless title row {"pad","title","type","updatedAt","v"};
@@ -200,13 +209,9 @@ def _walk_for(container, key, depth=2):
 
 _TSTATE_VERSION = 2
 
-# Envelope sniff for oversized rows: extract id/parentId from the row head
-# only (envelope fields lead OMP rows) so descendants still resolve their
-# ancestry.  This is NOT a streaming JSON parser — payloads stay unread.
-_SNIFF_HEAD = 4096
-_SNIFF_ID = re.compile(rb'"id"\s*:\s*"([A-Za-z0-9][A-Za-z0-9_.\-]{0,127})"')
-_SNIFF_PARENT = re.compile(
-    rb'"parentId"\s*:\s*(?:"([A-Za-z0-9][A-Za-z0-9_.\-]{0,127})"|null)')
+# (No envelope sniff for oversized rows: deliberately removed.  A skipped
+# oversized/malformed record latches a critical ancestry gap — fail closed —
+# instead of regex-recovering ids from an unparsed payload.)
 
 
 class OmpSessionAdapter:
@@ -261,7 +266,7 @@ class OmpSessionAdapter:
                 "assistant_other": 0, "tool_results": 0, "tool_results_error": 0,
                 "service_events": 0, "skipped_schema_fault": 0,
                 "discarded_branch_events": 0, "discarded_success_retracted": 0,
-                "oversized_envelope_recorded": 0, "duplicates": 0,
+                "duplicates": 0,
                 "pending_retracted": 0, "success_invalid_ts": 0,
             },
             "faults": {},               # kind -> cumulative count
@@ -269,7 +274,7 @@ class OmpSessionAdapter:
             "uncertainty": {
                 "dedupe_evicted": False, "entries_evicted": False,
                 "ancestry_uncertain": 0, "pending_overflow": False,
-                "unknown_seen": False,
+                "unknown_seen": False, "ancestry_gap": False,
             },
             "observation": {"last_poll_at": None, "last_append_at": None, "polls": 0},
         }
@@ -557,6 +562,17 @@ class OmpSessionAdapter:
 
     # ------------------------------------------------------- active chain
 
+    def _latch_gap(self):
+        """Latch a critical ancestry gap for this file generation.
+
+        Fail closed: an oversized/malformed skipped record or an
+        unresolvable parent affinity keeps the adapter explicitly unknown
+        (never a healthy "ok") until a rebuild starts a new generation.
+        """
+        u = self.s["uncertainty"]
+        u["ancestry_gap"] = True
+        u["unknown_seen"] = True
+
     _MISSING = object()
 
     def _walk_back(self, start):
@@ -576,6 +592,7 @@ class OmpSessionAdapter:
             if cur in visited:
                 self._fault("ancestry_cycle")
                 truncated = True
+                self._latch_gap()
                 break
             if cur in discarded:
                 under_discarded = True
@@ -587,7 +604,10 @@ class OmpSessionAdapter:
                 break
             parent = entries.get(cur, self._MISSING)
             if parent is self._MISSING:
+                # a missing parent is NOT a provable root: the walk (and
+                # everything hanging under it) is explicitly unknown
                 truncated = True
+                self._latch_gap()
                 break
             cur = parent
         chain.reverse()
@@ -646,11 +666,16 @@ class OmpSessionAdapter:
         live      — on the current active chain (reachable from head);
         retired   — known sibling/discarded branch no longer on the active
                     head (definitely not live);
-        uncertain — beyond the bounded retained chain (entries_cap) or an
-                    unknown id: explicitly unknown, documented, never live.
+        uncertain — on a chain whose walk truncated (missing parent, cycle,
+                    or bounded eviction), or an unknown id: explicitly
+                    unknown, documented, never live.
         """
         if entry_id in self._active_set:
-            return "retired" if self._chain_under_discarded else "live"
+            if self._chain_under_discarded:
+                return "retired"
+            if self._chain_truncated:
+                return "uncertain"
+            return "live"
         if entry_id in self.s["entries"] and not self._chain_truncated:
             return "retired"
         return "uncertain"
@@ -726,44 +751,26 @@ class OmpSessionAdapter:
 
     # ------------------------------------------------------------ row parsing
 
-    def _sniff_oversized_envelope(self, head):
-        """Record id/parent of a skipped oversized row (row head only).
-
-        Keeps descendants' ancestry resolvable without parsing, buffering,
-        or persisting the oversized payload.  Ids failing the safe pattern
-        simply never match, and the descendants then resolve to the
-        documented explicit-unknown state.
-        """
-        head = head[:_SNIFF_HEAD]
-        m = _SNIFF_ID.search(head)
-        if not m:
-            return
-        entry_id = m.group(1).decode("ascii")
-        pm = _SNIFF_PARENT.search(head)
-        parent = pm.group(1).decode("ascii") if (pm and pm.group(1)) else None
-        if self._note_seen(entry_id):
-            self._note_entry(entry_id, parent)
-            self._advance_head(entry_id, parent)
-            self.s["counters"]["oversized_envelope_recorded"] += 1
-
     def _handle_line(self, line, now):
         line = line.rstrip(b"\r")
         if not line.strip():
             return
         if len(line) > self.lim["max_row_bytes"]:
-            # genuinely larger than the bound: fail closed (payload never
-            # parsed/persisted) but keep ancestry resolvable via the
-            # envelope head sniff
+            # genuinely larger than the bound: fail closed — payload never
+            # parsed, sniffed, or persisted; the skipped record latches a
+            # critical ancestry gap for this file generation
             self._fault("oversized_row")
-            self._sniff_oversized_envelope(line)
+            self._latch_gap()
             return
         try:
             ev = json.loads(line.decode("utf-8"))
         except (ValueError, UnicodeDecodeError, RecursionError):
             self._fault("malformed_row")
+            self._latch_gap()
             return
         if not isinstance(ev, dict):
             self._fault("malformed_row")
+            self._latch_gap()
             return
         etype = ev.get("type")
         if (etype in ENVELOPELESS_SERVICE_TYPES
@@ -953,9 +960,11 @@ class OmpSessionAdapter:
         kind = _walk_for(ev, "kind")
         if kind == "discarded-entry-branch":
             root = _walk_for(ev, "discardedEntryId") or _walk_for(ev, "entryId")
-            if isinstance(root, str) and root:
+            if isinstance(root, str) and _SAFE_ID.match(root):
                 self._note_discarded_root(root)
             else:
+                # arbitrary/unsafe root text is never retained — not even
+                # hashed into a fake valid root
                 self._fault("branch_shape_unknown")
                 self.s["uncertainty"]["unknown_seen"] = True
         else:
@@ -996,11 +1005,11 @@ class OmpSessionAdapter:
             if (not s["skip_mode"] and b"\n" not in self._tail
                     and len(self._tail) > lim["max_row_bytes"]):
                 # unterminated row already oversized: drop it, never buffer
-                # it; the tail so far is the row head -> envelope sniff
-                self._sniff_oversized_envelope(self._tail)
+                # or persist any of its bytes; latch the critical gap
                 s["skip_mode"] = True
                 self._tail = b""
                 self._fault("oversized_row")
+                self._latch_gap()
                 continue
             if byte_budget <= 0:
                 break
@@ -1083,7 +1092,9 @@ class OmpSessionAdapter:
             if not backlog:
                 s["bootstrap_pending"] = False
             status = ("fault" if self._new_faults
-                      else "backlog" if backlog else "ok")
+                      else "backlog" if backlog
+                      else "unknown" if s["uncertainty"]["ancestry_gap"]
+                      else "ok")
             return self._report(status, size, new_bytes, events, backlog,
                                 history)
 
