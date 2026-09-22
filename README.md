@@ -13,14 +13,16 @@ observer utility (`scripts/`, Python 3 standard library only) that helps a coord
 monitor agent progress.
 
 - The skill is **not** a running scheduler or service — nothing executes on its own, and
-  the observer scripts run only when explicitly invoked.
+  the observer scripts run only when explicitly invoked. Unattended coordinator wakeups
+  rely on the runtime's native session heartbeat (verified per procedure, v1.1.1), not
+  on anything bundled here.
 - It bundles **no** coding model, reviewer ("inquisitor") binary, or other executables
   beyond the two read-only observer scripts.
 - It provides **no guarantee** of fully hands-off, safe execution. A human approves the
   plan and separately starts execution; destructive actions still stop for explicit
   permission.
 
-Version 1.1.0 · MIT License.
+Version 1.1.1 · MIT License.
 
 ## Requirements
 
@@ -169,6 +171,14 @@ The skill is a coordinator contract for one development campaign:
 - **Independent review**: a read-only reviewer that never edited the code returns an
   explicit complete **PASS/FAIL** verdict with actionable findings, commissioned by the
   coordinator with a raw, unbiased evidence packet.
+- **Coordinator wakeups via native heartbeat (v1.1.1)**: campaign START and adoption
+  of a running campaign must establish AND verify a `/heartbeat every 5m` recurring
+  instruction in the coordinator's session — two automatic no-nudge cycles with
+  observer-timestamped duty receipts, completion/stall handling, and stop control —
+  before claiming autonomous monitoring. Completion notifications (`notify:true`),
+  one-shot observer polls, and watch-pattern notifications are explicitly rejected as
+  schedulers; without a verified heartbeat the campaign is honestly not autonomous.
+  Contract: `references/coordinator-heartbeat.md`.
 - **Strict progress semantics (v1.1.0)**: transport/process activity (streams, bytes,
   PID, file growth), a successful model response, and actual task progress are never
   conflated; only explicit structured checkpoints count as progress. An optional
@@ -225,6 +235,7 @@ crash:
 skills/autonomous-campaign-development/
 ├── SKILL.md                                 # the skill: contract, procedure, pitfalls
 ├── references/
+│   ├── coordinator-heartbeat.md              # native /heartbeat wakeup contract (v1.1.1)
 │   ├── handoff-and-start.md                 # planning boundary, HANDOFF, manifest, START
 │   ├── hermes-orca-omp.md                   # dispatch mechanics and command shapes
 │   ├── progress-watchdog.md                 # progress semantics, observer CLI contract
