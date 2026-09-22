@@ -45,6 +45,55 @@ Hard ownership limits, stated honestly:
   another task, do NOT overwrite it: escalate to the user or move the campaign
   coordination into an isolated coordinator session.
 
+## Who sets and stops the heartbeat (the controller path)
+
+`/heartbeat` is user-side slash input into the owning TUI session. The coordinator
+model cannot type slash commands: printing `/heartbeat every 5m ...` in an assistant
+reply is text, not a dispatch, and running heartbeat strings as shell commands is
+equally not control (never shell-evaluate arbitrary campaign strings). Installing,
+pausing, and clearing therefore go through a terminal controller:
+
+- A controller is the operator, or an automation holding explicit approval to send to
+  that exact owner terminal. The owning coordinator session may act as its own
+  controller only if safely pinned and explicitly approved; a plain coordinator
+  reply is never control. With no controller, the campaign is NOT autonomous:
+  report that and request operator assist.
+- This path operates on the existing, live Hermes session; the ownership limits
+  above (no cross-process/reboot guarantee) bind control exactly as they bind
+  firing.
+
+The same guarded path governs every input, set and clear alike:
+
+1. Discover: `orca-ide terminal list --json`. Require an exact match on handle AND
+   incarnationId AND worktreePath AND agentIdentity = hermes, with the terminal
+   connected, writable, not orphaned - and confirm that terminal's current session
+   is THIS campaign's execution session (one project may host several sessions). A
+   missing or ambiguous match means no send: escalate.
+2. Refresh the identity before EVERY input - re-run discovery each time; handles and
+   incarnations are recycled, a stale binding proves nothing.
+3. Check the prompt surface is ready/idle before installing input: never send into
+   an active user compose, a pager, or a viewer, and never blanket-interrupt.
+4. Send to the verified handle only, then read back the native control response:
+   `orca-ide terminal send --terminal <verified-handle> --text '/heartbeat status'
+   --enter --json` followed by `orca-ide terminal read` on the same handle. The
+   terminal API accepting the send is NOT proof; the native Hermes response in the
+   read output is. Duty receipts (below) then prove the wakeup itself.
+5. Unknown outcome: no blind retry. Use `--retry-request` only with the same exact
+   request the tool itself returned and supports - never invent IDs.
+
+Clearing or pausing at a terminal campaign state uses the same path on the SAME
+verified terminal: send `/heartbeat pause` (or `clear`), read the actual status
+response, and verify no new tick fires after one full interval; an in-flight turn
+may finish normally. Never install, clear, or inspect a heartbeat by direct
+SessionDB/SQL or state-file edits - the slash interface through the verified
+terminal is the only sanctioned channel.
+
+Campaign state MUST persist the controller metadata: the approved controller
+identity (operator or automation), the owner terminal binding it is approved to
+send to (handle, incarnationId, worktreePath, agentIdentity), the duty receipts,
+and who clears the heartbeat at terminal states. Absent controller metadata means
+no controller: report not-autonomous and request operator assist.
+
 ## What is explicitly forbidden as a wakeup mechanism
 
 Each of these caused or enabled the 2026-09-22 incident:
@@ -113,13 +162,15 @@ a WATCH file that still lists finished tasks is monitoring the past.
 
 Campaign START - and adoption of an already-running campaign - MUST establish AND
 verify the heartbeat BEFORE the coordinator claims autonomous monitoring. "Set" alone
-proves nothing.
+proves nothing. Every `/heartbeat` interaction below runs through the controller
+path above - never model-printed text.
 
 1. Discover the exact current session (the one that will own coordination) and confirm
    it is the campaign's execution session.
 2. `/heartbeat status` - confirm no pre-existing heartbeat, or one that is explicitly
    this campaign's; a foreign heartbeat means escalate or isolate, never overwrite.
-3. Set it: `/heartbeat every 5m <instruction as above>`.
+3. Set it: `/heartbeat every 5m <instruction as above>`, sent to the verified owner
+   terminal through the controller path above.
 4. Receive one automatic coordinator turn after idle with NO human input, executing
    the instruction (fresh observer sample recorded in the duty receipt).
 5. Receive a SECOND automatic cycle, again with no human nudge. One success is not a
@@ -130,18 +181,24 @@ proves nothing.
      self-remediation beyond the approved ladder);
    - a completed-work path (task awaiting review) produces the review commissioning
      step.
-7. Prove stop control: `/heartbeat pause` (or `clear`), confirm via `/heartbeat
-   status`, and confirm no further tick fires after one full interval.
+7. Prove stop control through the same controller path: `/heartbeat pause` (or
+   `clear`) on the same verified terminal, read back the actual `/heartbeat status`
+   response, and confirm no further tick fires after one full interval (an in-flight
+   turn may finish first).
 
 Receipt standard: a duty receipt counts only with the observer's own fresh timestamp
 or the concrete action taken - the heartbeat's armed status or `fire_count` alone is
-NOT proof. Until steps 1-7 pass, the campaign is NOT under autonomous monitoring and
-must be described as such.
+NOT proof. The 60-second floor is a floor, not an exact cadence: a busy session
+coalesces ticks, actual turns may lag or merge, and durable slash-worker counters
+may differ from what the session shows - verify from actual session messages and
+output receipts, never from counters alone. Until steps 1-7 pass, the campaign is
+NOT under autonomous monitoring and must be described as such.
 
 ## Stop conditions
 
-Clear (`/heartbeat clear`) or pause the heartbeat when the campaign reaches
-`completed`, a needs-user pause, or any state where coordinator action waits on the
+The controller clears (`/heartbeat clear`) or pauses the heartbeat on that same
+verified terminal when the campaign reaches `completed`, a needs-user pause, or any
+state where coordinator action waits on the
 user: no endless idle cycles burning tokens. Never leave stale resume commands in the
 heartbeat instruction after a pause - a paused campaign's heartbeat, if resumed by the
 user, must re-validate state (per
@@ -149,9 +206,11 @@ user, must re-validate state (per
 
 ## Missing heartbeat capability
 
-If the coordinator's runtime has no verified native heartbeat: the campaign is NOT
-autonomous - say so. Temporary fallback: explicit bounded foreground waiting/polling
-by the coordinator inside a turn (with a declared deadline), or the user re-prompting.
+If the coordinator's runtime has no verified native heartbeat, or no approved
+terminal controller exists to install and clear it: the campaign is NOT autonomous -
+say so and request operator assist. Temporary fallback: explicit bounded foreground
+waiting/polling by the coordinator inside a turn (with a declared deadline), or the
+user re-prompting.
 Never claim a schedule is installed when it is not, and never substitute the forbidden
 mechanisms above. Bootstrap/migration tooling from other lanes is out of scope here
 until independently verified; this skill's contract is the native heartbeat.

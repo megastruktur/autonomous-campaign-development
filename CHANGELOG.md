@@ -33,6 +33,15 @@ overnight without a verified observation → wakeup → coordinator-action chain
   a persistent `watch` process.
 - `README.md`: version 1.1.1; heartbeat contract summarized; repository contents
   updated.
+- Docs amendment (same 1.1.1, post-review F-1): `/heartbeat` is user-side slash
+  input - the coordinator model cannot type it. `references/coordinator-heartbeat.md`
+  adds the guarded terminal-controller path for setting AND clearing
+  (identity-verified `orca-ide terminal list` + `terminal send` + read-back of the
+  native response; no blind retries; no SQL/state edits; controller/owner identity
+  and duty receipts persisted in campaign state; no controller means
+  not-autonomous); SKILL.md mirrors it. Cadence honesty: the 60s floor is not an
+  exact schedule and `fire_count` is not ground truth - actual session messages and
+  output receipts are.
 
 ### Explicitly rejected as wakeup mechanisms (documented, not implemented)
 
@@ -43,8 +52,11 @@ overnight without a verified observation → wakeup → coordinator-action chain
   delivered matches; not a durable scheduler.
 - `/tmp` duty scripts and cron targeting unverified transports.
 
-Note: live end-to-end verification of the heartbeat protocol runs in a separate lane;
-this release documents and requires the procedure but claims no completed live proof.
+Note: install/clear procedure is the identity-verified terminal-controller path
+documented above (the transport was runtime-tested: `orca-ide terminal send` delivers
+slash input with native response read-back - acceptance alone is not proof); full
+live end-to-end proof of the heartbeat protocol remains the separate final gate -
+this release does not claim it.
 
 ## 1.1.0
 
