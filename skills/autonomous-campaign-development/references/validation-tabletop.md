@@ -76,6 +76,7 @@ the text instructs at each step. Expected outcomes below are the pass criteria.
 | 37 | Remediation wants a different or heavier model mid-campaign | Only the approval-bound fallback (and optional final-review) model may be used; any other switch pauses for explicit user approval |
 | 38 | Watchdog output looks wrong mid-campaign | Report unknown, apply the declared attempt budget, continue with the packaged observer or bounded manual status as shipped; watcher improvement becomes a separate maintenance task - no mid-execution edits |
 | 39 | Agent dispatched hidden/headless; `terminal focus` returns `navigated:false` | Not treated as user-visible: verify discoverability/link, disclose to the user, bind handles + session identity, no duplicate writer when moving UI |
+| 40 | Bounded watcher running; a session JSONL is already 26m silent at spawn; later the campaign reaches `completed` | First poll fires `SILENCE_NUDGE`: exactly one bounded nudge to the pinned handle, exit 0, completion notification wakes the coordinator; at `completed` the coordinator spawns NO next slice (auto-stop - no daemon, no token burn); a dead watcher-hosting terminal is reported as monitoring-down, never claimed as coverage |
 
 ## Recording results
 

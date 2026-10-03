@@ -1,5 +1,56 @@
 # Changelog
 
+## 1.2.0 — 2026-10-03
+
+Focus: unattended coordinator wakeups. Adds the bounded event-driven watcher as a
+first-class wakeup mechanism (Option A) alongside the native session heartbeat
+(Option B), closing the residual gap left by 1.1.1: the heartbeat is reliable but
+must be installed and cleared by a terminal controller, and one forgotten at a
+terminal state keeps burning tokens indefinitely.
+
+### Added
+
+- `templates/bounded_watcher.sh`: the bounded event watcher template (Option A).
+  Spawned by the coordinator with `terminal(command="...", background=true,
+  notify=true)`, it polls every ~20s and EXITS on the first coordinator-actionable
+  event — `NEW_COMMIT` (a worktree's `git rev-list --count` moved off the
+  spawn-time baseline), `WORKER_EXIT` (a pinned agent terminal handle left
+  `orca-ide terminal list --json`), `SILENCE_NUDGE` (a session JSONL quiet >25m:
+  exactly one bounded status nudge via `orca-ide terminal send`, then exit) — or
+  after the slice budget (default 900s) with `SLICE_TIMEOUT`. Because Hermes
+  `notify=true` is notify-on-COMPLETION, each exit creates the coordinator turn
+  with a one-line JSON event summary and a distinct exit code (0 event/timeout,
+  3 WORKER_EXIT, 2 ERROR). Auto-stop is procedural: at completed/paused/needs-user
+  states the coordinator spawns no next slice — no daemon, no token drain, no
+  `/heartbeat clear` needed. Guardrails: at most ONE nudge per slice, no
+  remediation beyond it, single instance per slice, fresh handle verification at
+  every respawn. Event paths and exit codes exercised end-to-end against a real
+  `orca-ide terminal list`, real git worktrees, and signal delivery.
+- `references/coordinator-heartbeat.md`: full Option A contract — why
+  notify-on-COMPLETION plus a bounded exit is a wakeup, the event table, the
+  lifecycle (pin fresh identities -> baseline -> classify/act on wake -> re-arm or
+  auto-stop -> record), the verification standard (one proven event exit ->
+  completion notification -> coordinator-turn chain plus one `SLICE_TIMEOUT`
+  check-in, with the dead-watcher-terminal limit disclosed), and guardrails. The
+  forbidden-pattern entry is clarified: infinite `notify:true` loops are forbidden
+  because completion notification fires only on exit; a bounded watcher that exits
+  on an event or slice timeout is fully compatible and recommended.
+
+### Changed
+
+- `SKILL.md` (version 1.2.0): section 9 documents both sanctioned wakeup options
+  (Option A recommended for unattended runs); START/adoption requires a verified
+  wakeup mechanism — either option; pitfalls and the verification checklist now
+  cover watcher-specific failure modes (unverified spawns, dead watcher-hosting
+  terminals, pointless respawns at terminal states).
+- `references/progress-watchdog.md`: observer-rules and run-workflow now name both
+  sanctioned wakeup mechanisms; the observer scripts themselves stay unable to
+  wake or nudge anything.
+- `README.md`: version 1.2.0; the wakeup bullet documents both options; repository
+  contents list the watcher template.
+- `references/validation-tabletop.md`: new scenario 40 (silence at spawn fires the
+  nudge and wakes the coordinator; auto-stop at terminal states).
+
 ## 1.1.1 — 2026-09-22
 
 Focus: coordinator wakeups. Response to the 2026-09-22 watcher incident

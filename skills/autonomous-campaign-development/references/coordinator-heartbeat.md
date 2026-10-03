@@ -1,11 +1,92 @@
-# Coordinator Wakeups: the Native Heartbeat Contract
+# Coordinator Wakeups: Bounded Event Watcher and the Native Heartbeat Contract
 
 The observer only reports; something must reliably re-enter the coordinator session so
-the report turns into coordinator action. This reference defines the ONLY sanctioned
-wakeup mechanism and its verification standard. Root cause background:
+the report turns into coordinator action. This reference defines the TWO sanctioned
+wakeup mechanisms and their verification standards: the **bounded event watcher with
+completion notification** (Option A, recommended for unattended runs) and the
+**native session heartbeat** (Option B). Root cause background:
 incident 2026-09-22 (`plans/watcher-incident-2026-09-22/REPORT.md` in the source repo).
 
-## The mechanism (verified against installed Hermes source)
+## Option A - the bounded event watcher (recommended for unattended runs)
+
+The coordinator spawns a small, bounded polling script (template:
+[../templates/bounded_watcher.sh](../templates/bounded_watcher.sh)) as a background
+process with completion notification - Hermes shape:
+`terminal(command="...", background=true, notify=true)`.
+
+Why it works: installed Hermes maps boolean `notify` to notify-on-COMPLETION
+(`tools/terminal_tool.py:1311-1338`). An INFINITE loop therefore notifies nothing
+while alive - the 2026-09-22 failure - but a BOUNDED watcher that always exits turns
+that same completion notification into a reliable coordinator wakeup: the exit is the
+wakeup, and the exit summary (last stdout line + exit code) is the turn's content.
+The watcher is the coordinator's own delegated automation for one bounded slice; it
+is NOT the read-only observer scripts (`scripts/`), which remain unable to wake,
+nudge, or change anything.
+
+The polling loop checks every ~20s and EXITS IMMEDIATELY on the first
+coordinator-actionable event (exactly one JSON line on stdout; exit codes matter
+because they appear in the completion summary):
+
+| Event | Exit | Detection |
+|---|---|---|
+| `NEW_COMMIT` | 0 | a watched worktree's `git rev-list --count HEAD` moved off the baseline taken at spawn |
+| `WORKER_EXIT` | 3 | a pinned agent terminal handle vanished from `orca-ide terminal list --json` (agent exited or crashed) |
+| `SILENCE_NUDGE` | 0 | a session JSONL quiet > ~25m (1500s): the watcher sends ONE bounded status nudge via `orca-ide terminal send` to the pinned handle, then exits |
+| `SLICE_TIMEOUT` | 0 | slice budget (default 900s) elapsed with no event: a scheduled coordinator check-in |
+| `TERMINATED` | 0 | the coordinator cancelled the watcher (SIGINT/SIGTERM) |
+| `ERROR` | 2 | the watcher cannot do its job: transport down on 3 consecutive polls, a worktree unreadable on 3 consecutive polls, malformed configuration, lock trouble |
+
+Lifecycle and rules:
+
+1. **Pin fresh identities at spawn.** Discover worker terminals via
+   `orca-ide terminal list --json` (exact handle AND incarnationId AND worktreePath
+   AND agentIdentity, connected, not orphaned - the same discovery discipline as the
+   controller path below), collect worktree paths and session-JSONL paths (typically
+   the same `session_log` values a WATCH config carries), then spawn the watcher
+   with `background=true, notify=true`. The nudge in step 3 sends only to a handle
+   verified present in the same poll's fresh listing.
+2. **Baseline, then arm.** The watcher takes commit baselines at spawn; commits that
+   landed before the spawn are the coordinator's own context, not events. Events arm
+   from the second poll; the first exit wakes the coordinator with one JSON event
+   line.
+3. **On wake: classify, act, re-arm or stop.** Read state/TODO/evidence, classify
+   the event, and continue the campaign as already authorized (dispatch, review
+   commissioning, integration - within the approved plan and attempt budget,
+   section 10). `SLICE_TIMEOUT` is a scheduled check-in, not a failure;
+   `SILENCE_NUDGE` is a diagnosis trigger - the nudge already sent was the one
+   scoped steer for that slice; the coordinator decides any next remediation step.
+   While the campaign is executing, spawn a FRESH watcher with FRESHLY verified
+   handles for the next slice.
+4. **Auto-stop (the token-safety property).** At `completed`, an operator pause, or
+   any needs-user state, the coordinator spawns NO next watcher slice. Nothing runs
+   on its own, nothing burns tokens, and there is nothing to clear - the option is
+   cleanly revocable by simple inaction, which is exactly what the native heartbeat
+   is not.
+5. **Record.** Append each spawn and each delivered event to `{prefix}_EVENTS.jsonl`
+   like any meaningful transition; the exit summary line is the receipt.
+
+Verification standard (before claiming autonomous monitoring via Option A): prove
+the full chain at least once per mechanism with NO human input between links -
+watcher exit -> Hermes completion notification -> coordinator turn acting on the
+exit summary - once for an event exit (`NEW_COMMIT` or `SILENCE_NUDGE`) and once
+for `SLICE_TIMEOUT` (a scheduled check-in turn). Fresh handle verification at every
+respawn is part of the chain. Disclose the dead-channel limit honestly: if the
+terminal PROCESS hosting the watcher dies, no exit can fire and monitoring is
+silently down - the same dead-owner honesty rule as Option B; never claim coverage
+across process death or reboot.
+
+Guardrails:
+
+- At most ONE nudge per slice; the watcher never kills, merges, switches models, or
+  remediates beyond that nudge. Remediation stays with the coordinator (section 10).
+- The watcher writes nothing to campaign state; stdout is one bounded JSON line
+  (<=1024 bytes), progress logs go to stderr.
+- One watcher instance per campaign slice (the template's optional lock file exits
+  `ERROR` instead of double-nudging when a second instance starts).
+- Use the shipped template as-is during execution; improving it mid-campaign is a
+  separate maintenance task (SKILL.md section 9).
+
+## Option B - the native session heartbeat (verified against installed Hermes source)
 
 Use the native session heartbeat in the coordinator's own Hermes TUI session:
 
@@ -98,10 +179,14 @@ no controller: report not-autonomous and request operator assist.
 
 Each of these caused or enabled the 2026-09-22 incident:
 
-- **`notify:true` on a persistent background process** - installed Hermes maps boolean
-  `notify` to notify-on-COMPLETION (`tools/terminal_tool.py:1311-1338`). A
-  12-hour loop that prints alerts to stdout keeps running and notifies nothing while
-  alive. Persistent stdout is not a wakeup.
+- **`notify:true` on a persistent background process that never exits** - installed
+  Hermes maps boolean `notify` to notify-on-COMPLETION
+  (`tools/terminal_tool.py:1311-1338`). A 12-hour loop that prints alerts to stdout
+  keeps running and notifies nothing while alive. Persistent stdout is not a wakeup.
+  The forbidden thing is the UNBOUNDED loop, not `notify:true` itself: a bounded
+  event watcher that explicitly exits on an event or slice timeout is fully
+  compatible with completion notification - it is Option A above and the
+  recommended mechanism for unattended runs.
 - **Writing the observer config or running one poll** - `poll_seconds` in
   `templates/WATCH.json` is a threshold, not a loop launcher. One successful
   `campaign_watch.py poll` line proves one sample, not a functioning observer. A stale
@@ -158,7 +243,7 @@ a WATCH file that still lists finished tasks is monitoring the past.
    This adds a supervision obligation (who owns the process, what restarts it) -
    only choose it when that ownership is real.
 
-## Establishing and verifying (required before claiming autonomous monitoring)
+## Establishing and verifying Option B (required before claiming autonomous monitoring via the heartbeat)
 
 Campaign START - and adoption of an already-running campaign - MUST establish AND
 verify the heartbeat BEFORE the coordinator claims autonomous monitoring. "Set" alone
@@ -196,21 +281,27 @@ NOT under autonomous monitoring and must be described as such.
 
 ## Stop conditions
 
-The controller clears (`/heartbeat clear`) or pauses the heartbeat on that same
-verified terminal when the campaign reaches `completed`, a needs-user pause, or any
-state where coordinator action waits on the
+Option A stops by NOT re-spawning: when the campaign reaches `completed`, a
+needs-user pause, or any state where coordinator action waits on the user, the
+coordinator spawns no next watcher slice - there is no daemon to clear and no idle
+cycles to burn.
+
+For Option B, the controller clears (`/heartbeat clear`) or pauses the heartbeat on
+that same verified terminal when the campaign reaches `completed`, a needs-user
+pause, or any state where coordinator action waits on the
 user: no endless idle cycles burning tokens. Never leave stale resume commands in the
 heartbeat instruction after a pause - a paused campaign's heartbeat, if resumed by the
 user, must re-validate state (per
 [state-and-recovery.md](state-and-recovery.md)) rather than blindly continue.
 
-## Missing heartbeat capability
+## Missing wakeup capability
 
-If the coordinator's runtime has no verified native heartbeat, or no approved
-terminal controller exists to install and clear it: the campaign is NOT autonomous -
-say so and request operator assist. Temporary fallback: explicit bounded foreground
-waiting/polling by the coordinator inside a turn (with a declared deadline), or the
-user re-prompting.
+If neither sanctioned mechanism is available - no way to spawn a background process
+with completion notification (Option A), or no verified native heartbeat and no
+approved terminal controller to install and clear it (Option B) - the campaign is
+NOT autonomous: say so and request operator assist. Temporary fallback: explicit
+bounded foreground waiting/polling by the coordinator inside a turn (with a declared
+deadline), or the user re-prompting.
 Never claim a schedule is installed when it is not, and never substitute the forbidden
 mechanisms above. Bootstrap/migration tooling from other lanes is out of scope here
-until independently verified; this skill's contract is the native heartbeat.
+until independently verified; this skill's contracts are Option A and Option B above.

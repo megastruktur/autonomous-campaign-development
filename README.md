@@ -14,15 +14,18 @@ monitor agent progress.
 
 - The skill is **not** a running scheduler or service — nothing executes on its own, and
   the observer scripts run only when explicitly invoked. Unattended coordinator wakeups
-  rely on the runtime's native session heartbeat (verified per procedure, v1.1.1), not
-  on anything bundled here.
+  rely on a sanctioned wakeup mechanism: the bounded event watcher with completion
+  notification (Option A, v1.2.0, template bundled) or the runtime's native session
+  heartbeat (Option B, verified per procedure) — contract in
+  `references/coordinator-heartbeat.md`.
 - It bundles **no** coding model, reviewer ("inquisitor") binary, or other executables
-  beyond the two read-only observer scripts.
+beyond the two read-only observer scripts and one inert shell template (the bounded
+event watcher — it runs only when a coordinator explicitly spawns it).
 - It provides **no guarantee** of fully hands-off, safe execution. A human approves the
   plan and separately starts execution; destructive actions still stop for explicit
   permission.
 
-Version 1.1.1 · MIT License.
+Version 1.2.0 · MIT License.
 
 ## Requirements
 
@@ -171,14 +174,22 @@ The skill is a coordinator contract for one development campaign:
 - **Independent review**: a read-only reviewer that never edited the code returns an
   explicit complete **PASS/FAIL** verdict with actionable findings, commissioned by the
   coordinator with a raw, unbiased evidence packet.
-- **Coordinator wakeups via native heartbeat (v1.1.1)**: campaign START and adoption
-  of a running campaign must establish AND verify a `/heartbeat every 5m` recurring
-  instruction in the coordinator's session — two automatic no-nudge cycles with
-  observer-timestamped duty receipts, completion/stall handling, and stop control —
-  before claiming autonomous monitoring. Completion notifications (`notify:true`),
-  one-shot observer polls, and watch-pattern notifications are explicitly rejected as
-  schedulers; without a verified heartbeat the campaign is honestly not autonomous.
-  Contract: `references/coordinator-heartbeat.md`.
+- **Coordinator wakeups via sanctioned mechanisms (v1.2.0)**: campaign START and
+  adoption of a running campaign must establish AND verify one sanctioned wakeup
+  mechanism before claiming autonomous monitoring. **Option A (recommended for
+  unattended runs): the bounded event watcher** — the coordinator spawns
+  `templates/bounded_watcher.sh` with `background=true, notify=true`; it polls every
+  ~20s and exits on the first actionable event (worktree commit, worker terminal
+  exit, >25m session silence after exactly one bounded nudge) or at the slice budget
+  (default 15 min) — Hermes' notify-on-completion turns each exit into a coordinator
+  turn carrying the event summary. Auto-stop: at completed/paused/needs-user states
+  the coordinator spawns no next watcher — no daemon, no token drain, no manual
+  cleanup. **Option B: the native session heartbeat** — `/heartbeat every 5m` with
+  two automatic no-nudge cycles, observer-timestamped duty receipts, and stop
+  control through the guarded terminal-controller path. Infinite `notify:true`
+  loops, one-shot observer polls, and watch-pattern notifications are explicitly
+  rejected as schedulers; without a verified mechanism the campaign is honestly not
+  autonomous. Contract: `references/coordinator-heartbeat.md`.
 - **Strict progress semantics (v1.1.0)**: transport/process activity (streams, bytes,
   PID, file growth), a successful model response, and actual task progress are never
   conflated; only explicit structured checkpoints count as progress. An optional
@@ -235,7 +246,7 @@ crash:
 skills/autonomous-campaign-development/
 ├── SKILL.md                                 # the skill: contract, procedure, pitfalls
 ├── references/
-│   ├── coordinator-heartbeat.md              # native /heartbeat wakeup contract (v1.1.1)
+│   ├── coordinator-heartbeat.md              # coordinator wakeup contract: Option A watcher + Option B heartbeat (v1.2.0)
 │   ├── handoff-and-start.md                 # planning boundary, HANDOFF, manifest, START
 │   ├── hermes-orca-omp.md                   # dispatch mechanics and command shapes
 │   ├── progress-watchdog.md                 # progress semantics, observer CLI contract
@@ -248,7 +259,8 @@ skills/autonomous-campaign-development/
 │   ├── HANDOFF.md                           # execution handoff + manifest shape
 │   ├── TODO.md                              # campaign TODO template
 │   ├── STATE.json                           # campaign state template (schema 2)
-│   └── WATCH.json                           # observer config template (schema_version 1)
+│   ├── WATCH.json                           # observer config template (schema_version 1)
+│   └── bounded_watcher.sh                   # Option A bounded event watcher template (v1.2.0)
 └── scripts/                                 # optional observer utility (v1.1.0)
     ├── omp_events.py                        # metadata-only OMP session log adapter
     └── campaign_watch.py                    # deterministic progress watcher CLI

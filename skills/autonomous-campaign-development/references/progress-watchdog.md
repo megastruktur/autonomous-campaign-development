@@ -83,10 +83,11 @@ kill it. A live long-running command within its deadline is not a stall.
 - Per-task age persists across attempt changes and watcher restarts (sidecar state);
   a watcher restart never resets ages to zero.
 - The observer is not a scheduler and not a coordinator wakeup: it does not cause
-  anything to run. The sanctioned wakeup mechanism is the coordinator's native session
-  heartbeat, established and verified per
-  [coordinator-heartbeat.md](coordinator-heartbeat.md) - completion notifications,
-  one-shot polls, and watch patterns are not schedulers.
+  anything to run. The sanctioned wakeup mechanisms are the coordinator's bounded
+  event watcher (Option A) and native session heartbeat (Option B), established and
+  verified per [coordinator-heartbeat.md](coordinator-heartbeat.md) - completion
+  notifications from an unbounded process, one-shot polls, and watch patterns are
+  not schedulers.
 - Reviewer-relevant boundaries: the reviewer needs no source mutation to review; small
   completed calls and review chunks are preferred over giant single calls; a partial
   review is never PASS; the final verdict stays compact and links evidence. A short
@@ -241,8 +242,9 @@ no-progress budget.
    supervised background process: decide who owns it and how it is supervised BEFORE
    starting it. A background watcher does not wake a sleeping coordinator TUI and
    sends no notifications by itself; it only prints lines. It is a reporter, not a
-   scheduler. Coordinator wakeups come only from the verified native heartbeat
-   ([coordinator-heartbeat.md](coordinator-heartbeat.md)); in its preferred
+   scheduler. Coordinator wakeups come only from a verified wakeup mechanism - the
+   bounded event watcher (Option A) or the native heartbeat (Option B) - per
+   [coordinator-heartbeat.md](coordinator-heartbeat.md); in the heartbeat's preferred
    sole-writer mode the heartbeat itself runs one bounded `poll` per cycle and no
    persistent `watch` process exists. If a persistent `watch` is running, the
    heartbeat reads `status` from its fresh sample and never starts a second writer -

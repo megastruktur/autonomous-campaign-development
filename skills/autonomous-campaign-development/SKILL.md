@@ -1,7 +1,7 @@
 ---
 name: autonomous-campaign-development
 description: Orchestrate multi-agent dev campaigns in Orca worktrees
-version: 1.1.1
+version: 1.2.0
 metadata:
   hermes:
     category: software-development
@@ -15,7 +15,9 @@ write source code. One explicit plan approval authorizes WHAT the campaign may d
 separate explicit START, given in a distinct fresh session bound to a frozen manifest,
 begins execution. Runtime evidence plus independent review, never unit tests or agent
 self-reports, prove each task. Unattended coordinator wakeups are sustained only by a
-verified native session heartbeat (v1.1.1) - never by the observer scripts.
+verified wakeup mechanism - the bounded event watcher with completion notification
+(Option A, recommended for unattended runs) or the native session heartbeat
+(Option B) - never by the observer scripts.
 
 ## When to Use
 
@@ -112,14 +114,18 @@ branch, starting SHA, worktree absence/ownership, and actual capabilities; resol
 runtime command honestly, never guess. Record start and approval independently; missing
 runtime identity cannot claim enforced clean context (explicit operator confirmation,
 recorded start without re-gating. START - and adoption of an already-running campaign -
-must ALSO establish and verify the native coordinator heartbeat in the execution
-session before any claim of autonomous monitoring: a terminal controller (the
-operator, approved automation, or the safely pinned owning coordinator) installs
-`/heartbeat every 5m` with a bounded campaign instruction through the guarded,
-identity-verified Orca terminal path - the slash interface is user-side input and
-the coordinator model cannot type it - then TWO automatic no-nudge cycles with duty
-receipts, completion/stall handling, and stop control are proven. An
-armed-but-unverified heartbeat, no controller, or a
+must ALSO establish and verify a sanctioned coordinator wakeup mechanism in the
+execution session before any claim of autonomous monitoring. Option A: spawn the
+bounded event watcher with `notify=true` and prove the chain - at least one event
+exit (or `SLICE_TIMEOUT`) -> completion notification -> coordinator turn acting on
+the exit summary. Option B: a terminal controller (the operator, approved
+automation, or the safely pinned owning coordinator) installs `/heartbeat every 5m`
+with a bounded campaign instruction through the guarded, identity-verified Orca
+terminal path - the slash interface is user-side input and the coordinator model
+cannot type it - then TWO automatic no-nudge cycles with duty receipts,
+completion/stall handling, and stop control are proven. An armed-but-unverified
+heartbeat, an unverified watcher spawn, or a missing controller means the campaign
+is NOT autonomous: say so. Full wakeup contract:
 [references/coordinator-heartbeat.md](references/coordinator-heartbeat.md). Full START
 contract: [references/handoff-and-start.md](references/handoff-and-start.md).
 
@@ -166,14 +172,35 @@ with planning and execution sessions and the start recorded independently),
 [templates/TODO.md](templates/TODO.md)). The coordinator is the sole writer of shared
 state; agents report into task-owned evidence. Update state at every meaningful
 transition and on a ten-minute cadence while active: poll EVERY active session.
-Coordinator wakeups between user visits are sustained ONLY by the verified native
-session heartbeat in the execution session (standard: `/heartbeat every 5m` with a
-bounded instruction; sole-writer fresh poll per cycle, timestamped duty receipts,
-WATCH task membership updated at every dispatch/integration transition; installed
-and cleared only through the guarded terminal-controller path, with controller
-identity and duty receipts persisted in state) - the observer never wakes anyone,
-and the controller clears or pauses the heartbeat at completed/paused/needs-user
-states so idle cycles never burn tokens. Full contract:
+Coordinator wakeups between user visits are sustained ONLY by one of the two
+sanctioned mechanisms - the observer never wakes anyone:
+
+- **Option A (recommended for unattended runs): bounded event watcher.** Spawn
+  [templates/bounded_watcher.sh](templates/bounded_watcher.sh) as a background
+  process with completion notification (`terminal(command="...", background=true,
+  notify=true)`). The script polls every ~20s and EXITS on the first
+  coordinator-actionable event - `NEW_COMMIT` (a watched worktree's
+  `git rev-list --count` moved), `WORKER_EXIT` (a pinned agent terminal left the
+  terminal list), `SILENCE_NUDGE` (a session JSONL quiet > 25m: it sends ONE
+  bounded status nudge, then exits) - or when the slice budget expires (default
+  900s) with `SLICE_TIMEOUT`. Hermes `notify=true` is notify-on-COMPLETION, so the
+  exit - not its stdout - creates the coordinator turn with the exit summary. On
+  wake, classify the event, act within the approved plan and attempt budget, then
+  spawn a FRESH watcher with FRESHLY verified handles for the next slice.
+  Auto-stop is the token-safety property: at `completed`, paused, or needs-user
+  states the coordinator simply does NOT spawn another watcher - no daemon, no
+  idle token drain, no manual cleanup. Guardrails: at most ONE nudge per slice;
+  the watcher never kills, merges, switches models, or remediates beyond that
+  nudge; one watcher instance per slice.
+- **Option B: native session heartbeat.** `/heartbeat every 5m` with a bounded
+  instruction in the execution session: sole-writer fresh poll per cycle,
+  timestamped duty receipts, WATCH task membership updated at every
+  dispatch/integration transition; installed and cleared only through the guarded
+  terminal-controller path, with controller identity and duty receipts persisted
+  in state; the controller clears or pauses the heartbeat at
+  completed/paused/needs-user states so idle cycles never burn tokens.
+
+Full contract (both options, verification standards, forbidden patterns):
 [references/coordinator-heartbeat.md](references/coordinator-heartbeat.md).
 Liveness semantics are strict: transport or process activity (stream, bytes, PID,
 mtime, JSONL growth) is not progress, a successful assistant response is not task
@@ -261,19 +288,25 @@ separately approved; merge is not user delivery. Endgame and cleanup contract:
   to a specific session without correlation.
 - Treating the optional observer as a scheduler, killer, or authoritative health
   source; it only reports, and stale/unknown observations stay unknown.
-- Substituting a fake wakeup for the native heartbeat: `notify:true` on a persistent
-  process is notify-on-COMPLETION (stdout is not a wakeup), one observer poll or a
-  written config schedules nothing, and `notify:[watch_patterns]` is permanently
+- Substituting a fake wakeup for a sanctioned mechanism: `notify:true` on a
+  persistent process is notify-on-COMPLETION (stdout is not a wakeup - only a
+  BOUNDED watcher that exits on an event or slice timeout turns completion
+  notification into a wakeup), one observer poll or a written config schedules
+  nothing, and `notify:[watch_patterns]` is permanently
   disabled after 8 matches - none of these is a scheduler
   ([coordinator-heartbeat.md](references/coordinator-heartbeat.md)).
 - Claiming autonomous monitoring from an armed heartbeat status line or fire count
-  without two verified no-nudge cycles with duty receipts and stop-control proof;
-  overwriting a session heartbeat that belongs to another task instead of escalating;
-  forgetting that a dead session-owner process means monitoring is down, with no
+  without two verified no-nudge cycles with duty receipts and stop-control proof,
+  or from merely spawning a watcher without proving at least one full
+  event exit -> completion notification -> coordinator-turn chain; overwriting a
+  session heartbeat that belongs to another task instead of escalating;
+  forgetting that a dead session-owner process - or a dead watcher-hosting
+  terminal - means monitoring is down, with no
   reboot/process-death recovery promised.
-- Leaving the heartbeat running at a completed, paused, or needs-user campaign -
-  idle cycles burn tokens; and resuming with stale instructions instead of
-  re-validating state.
+- Leaving a wakeup mechanism armed at a completed, paused, or needs-user campaign -
+  idle heartbeat cycles burn tokens, and a re-spawned watcher at a terminal state
+  burns a slice for nothing: auto-stop means spawning nothing new; and resuming
+  with stale instructions instead of re-validating state.
 - Pretending to type: printing `/heartbeat ...` in a coordinator reply, or running
   heartbeat strings as shell commands, is not control - the slash is installed,
   paused, and cleared only by an identity-verified terminal controller
@@ -327,12 +360,15 @@ separately approved; merge is not user delivery. Endgame and cleanup contract:
   recent evidence; no task sits at a later stage than its bound evidence supports;
   dependents released only after prerequisite post-merge smoke; cleanup checkboxes reflect
   actual verified actions, not promises.
-- Wakeup boundary: the execution session carries a verified native heartbeat (two
-  automatic no-nudge cycles with observer-timestamped duty receipts, completion/stall
-  handling, stop control, installed via the guarded terminal-controller path with
-  controller identity and duty receipts persisted in state) whenever autonomous
-  monitoring is claimed; the controller clears/pauses it at terminal campaign
-  states, reading the actual response back from the terminal.
+- Wakeup boundary: the execution session runs a VERIFIED wakeup mechanism whenever
+  autonomous monitoring is claimed. Option A: the bounded event watcher proven by at
+  least one full event exit (or `SLICE_TIMEOUT`) -> coordinator-turn cycle acting on
+  the exit summary, fresh handle verification at every respawn, and NO respawn at
+  terminal campaign states. Option B: two automatic no-nudge heartbeat cycles with
+  observer-timestamped duty receipts, completion/stall handling, stop control,
+  installed via the guarded terminal-controller path with controller identity and
+  duty receipts persisted in state; the controller clears/pauses it at terminal
+  campaign states, reading the actual response back from the terminal.
 - Start boundary: state lifecycle, sessions, and start records are coherent - start
   exists only in a distinct execution session whose recorded manifest hash matches the
   frozen files; the planning session created no worktrees or agents; resumes of a
