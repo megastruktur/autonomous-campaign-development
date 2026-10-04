@@ -1,4 +1,5 @@
 # Changelog
+
 ## 1.3.0 — 2026-10-04
 
 Focus: campaign worktree topology. Worktrees are created from branches end to end so a
