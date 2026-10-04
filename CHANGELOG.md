@@ -1,4 +1,32 @@
 # Changelog
+## 1.3.0 — 2026-10-04
+
+Focus: campaign worktree topology. Worktrees are created from branches end to end so a
+campaign occupies one nested subtree in the Orca worktree tree.
+
+### Changed
+
+- Worktree topology is now explicitly branch-based. The campaign integration worktree
+  is cut from the NAMED target branch at its pinned starting SHA
+  (`--base-branch <named-target-branch> --no-parent`), and every task worktree is
+  created as an Orca CHILD of the campaign worktree
+  (`--parent-worktree name:<prefix>-campaign`) based on the campaign BRANCH Orca
+  returned (`--base-branch <campaign-branch>`), with the returned HEAD compared to the
+  recorded current campaign tip before each create. Raw SHAs and `HEAD` are never
+  valid `--base-branch` values for campaign/task worktrees: they detach the checkout
+  from the branch-based campaign grouping in the Orca tree and can base tasks on a
+  stale tip. Command shapes verified live against `orca-ide`: root created from the
+  named branch, child created with parent lineage + campaign-branch base
+  (`parentWorktreeId` returned), teardown clean.
+- Option A verification bar (1.2.0 follow-up): proving the wakeup chain now requires
+  at least one full EVENT exit AND one `SLICE_TIMEOUT` exit, each -> completion
+  notification -> coordinator turn acting on the exit summary; a timeout-only run
+  exercises no event detection and proves nothing about events. SKILL.md sections 5
+  and Verification now match the standard `references/coordinator-heartbeat.md`
+  already carried.
+- `templates/bounded_watcher.sh`: the emitted event line truncates `task` to 200
+  chars (`detail` was already bounded at 400), keeping the one-line stdout receipt
+  bounded regardless of watched-item names.
 
 ## 1.2.0 — 2026-10-03
 

@@ -1,7 +1,7 @@
 ---
 name: autonomous-campaign-development
 description: Orchestrate multi-agent dev campaigns in Orca worktrees
-version: 1.2.0
+version: 1.3.0
 metadata:
   hermes:
     category: software-development
@@ -133,9 +133,11 @@ contract: [references/handoff-and-start.md](references/handoff-and-start.md).
 
 The EXECUTION session (after START) captures/validates the original NAMED target branch
 and its full starting SHA; do not assume main/master and do not reinterpret a detached
-HEAD later - a detached start requires the user to name the target. Create the
-Orca-managed `{prefix}-campaign` integration worktree from the pinned start, then task
-worktrees from the appropriate current campaign tip. Orca may auto-generate branch
+HEAD later - a detached start requires the user to name the target. At START create ONE
+campaign worktree `{prefix}-campaign` whose branch is cut from the NAMED target branch,
+then create every task worktree as an Orca CHILD of the campaign worktree based on the
+recorded campaign BRANCH - always branch bases, never a raw SHA or HEAD - so the whole
+campaign nests under one root in the Orca worktree tree. Orca may auto-generate branch
 names: record the actually returned branch and HEAD; on a HEAD mismatch, do not start.
 Full contract:
 [references/runtime-review-and-integration.md](references/runtime-review-and-integration.md).
@@ -345,6 +347,9 @@ separately approved; merge is not user delivery. Endgame and cleanup contract:
   in-progress on every remediation round.
 - A fresh worktree inherits the base branch's tracked brief file - overwrite and verify
   the title before dispatch.
+- Cutting a worktree from a raw SHA/HEAD instead of a branch base: the campaign root
+  takes the NAMED target branch and tasks take the recorded campaign branch, or the
+  worktree detaches from the campaign grouping in Orca and can sit on a stale tip.
 - Squash-merged branches look "unmerged" to git: never force-delete on status text; prove
   the recorded receipt instead.
 - Crash between squash and state checkpoint: compare campaign log/tree against receipts

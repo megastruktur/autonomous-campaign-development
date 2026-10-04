@@ -8,6 +8,7 @@
 .cache/
 node_modules/
 *.log
+__pycache__/
 
 # Community skills CLI install artifacts (project-scoped installs)
 .agents/

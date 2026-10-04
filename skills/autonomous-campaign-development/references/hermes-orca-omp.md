@@ -41,20 +41,33 @@ session and starting a new one with an approved model. Never invent `--fallback-
 ## Worktree topology commands
 
 ```bash
-# Campaign integration worktree from the pinned start:
+# Campaign integration worktree at START - own branch cut from the NAMED target
+# branch (never a raw SHA/HEAD base):
 orca-ide worktree create --repo path:<repo> --name <prefix>-campaign \
-  --base-branch <pinned-ref> --no-parent --json
+  --base-branch <named-target-branch> --no-parent --json
 orca-ide worktree show --worktree name:<prefix>-campaign --json   # learn REAL branch/path
-# Task worktree from the current campaign tip:
+# Task worktree - Orca CHILD of the campaign worktree, based on the campaign
+# BRANCH Orca returned (never a raw SHA/HEAD base):
 orca-ide worktree create --repo path:<repo> --name <prefix>-<task_name> \
-  --parent-worktree name:<prefix>-campaign --base-branch <current-campaign-ref> --json
+  --parent-worktree name:<prefix>-campaign --base-branch <campaign-branch> --json
 ```
 
 - Orca may auto-generate git branch names (namespaced). Record the branch and path the
   command actually RETURNED in state; never invent CLI flags to force a name. Worktree
-  naming is strict, branch naming may use the Orca namespace.
-- Compare the returned HEAD to the expected SHA; on mismatch, do not start work -
-  investigate the base ref first.
+  naming is strict, branch naming may use the Orca namespace. The returned campaign
+  branch is the `<campaign-branch>` base for EVERY task worktree.
+- `--parent-worktree` is Orca lineage ONLY (task worktrees nest under
+  `{prefix}-campaign` in the Orca tree); `--base-branch` is the Git base. Pass BOTH on
+  every task create: lineage gives the nesting, the campaign-branch base keeps every
+  task branch a true child of the campaign branch.
+- Never pass a raw commit SHA or `HEAD` as `--base-branch`: a SHA-based checkout
+  detaches from the branch-based campaign grouping and can sit on a stale tip. The
+  campaign branch advances with each squash integration - before each task create,
+  re-resolve the campaign branch tip and compare it to the recorded current campaign
+  tip.
+- Compare the returned HEAD to the expected SHA (campaign root: the pinned starting SHA
+  of the named target; tasks: the recorded current campaign tip); on mismatch, do not
+  start work - investigate the base ref first.
 - Worktrees must be created BY Orca (never bare `git worktree add`): Orca-created ones
   respond to `--worktree name:<name>` selectors; a `selector_not_found` error means the
   worktree is not Orca-managed - repair it, do not paper over it with a `path:` selector.

@@ -166,8 +166,11 @@ The skill is a coordinator contract for one development campaign:
   default, or an exact ID); resolved IDs are recorded, verified at startup, and pinned.
 - **Concurrency cap**: at most **three** simultaneously active coding agents (fix and
   remediation agents included), one writer per worktree.
-- **Topology**: a dedicated campaign integration worktree created from a pinned start
-  SHA and a recorded **named** source branch (never assumes `main`/`master`).
+- **Topology** (v1.3.0): a dedicated campaign worktree on its own branch cut from the
+  recorded **named** target branch at the pinned start SHA (never assumes
+  `main`/`master`, never a raw-SHA/`HEAD` base); every task worktree is an Orca child
+  of the campaign worktree (`--parent-worktree`) based on the campaign branch at its
+  current tip.
 - **Per-task loop**: develop → runtime test loop → independent review loop → squash
   integration and conflict handling → post-merge runtime smoke → evidence and cleanup.
   Runtime tests run after the executor declares readiness and after every fix batch.

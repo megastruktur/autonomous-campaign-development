@@ -91,8 +91,11 @@ final runtime evidence + clean frozen candidate + independent verdict.
   Do not assume main/master; do not reinterpret HEAD later. Detached HEAD start: the user
   must name the target branch.
 - Campaign integration: a dedicated Orca-managed worktree `{prefix}-campaign` on its own
-  branch created from the pinned start. Task worktrees branch from the appropriate
-  CURRENT campaign tip. Record the branch names Orca actually returned.
+  branch cut from the NAMED target branch at its pinned starting SHA - never a raw
+  SHA/HEAD base. Task worktrees are Orca children of the campaign worktree
+  (`--parent-worktree`) and branch from the campaign BRANCH at its CURRENT tip - again
+  a branch base, never a raw SHA/HEAD. Record the branch names Orca actually returned
+  and compare each returned HEAD to the expected tip before dispatch.
 - Task branches NEVER merge to the original target. Only the campaign branch does, once,
   at the end.
 - Serialize ALL integration writes: one merge at a time under integration ownership.
