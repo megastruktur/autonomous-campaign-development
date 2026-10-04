@@ -117,8 +117,8 @@ recorded start without re-gating. START - and adoption of an already-running cam
 must ALSO establish and verify a sanctioned coordinator wakeup mechanism in the
 execution session before any claim of autonomous monitoring. Option A: spawn the
 bounded event watcher with `notify=true` and prove the chain - at least one event
-exit (or `SLICE_TIMEOUT`) -> completion notification -> coordinator turn acting on
-the exit summary. Option B: a terminal controller (the operator, approved
+exit AND one `SLICE_TIMEOUT` exit, each -> completion notification -> coordinator
+turn acting on the exit summary. Option B: a terminal controller (the operator, approved
 automation, or the safely pinned owning coordinator) installs `/heartbeat every 5m`
 with a bounded campaign instruction through the guarded, identity-verified Orca
 terminal path - the slash interface is user-side input and the coordinator model
@@ -362,9 +362,10 @@ separately approved; merge is not user delivery. Endgame and cleanup contract:
   actual verified actions, not promises.
 - Wakeup boundary: the execution session runs a VERIFIED wakeup mechanism whenever
   autonomous monitoring is claimed. Option A: the bounded event watcher proven by at
-  least one full event exit (or `SLICE_TIMEOUT`) -> coordinator-turn cycle acting on
-  the exit summary, fresh handle verification at every respawn, and NO respawn at
-  terminal campaign states. Option B: two automatic no-nudge heartbeat cycles with
+  least one full event exit AND one `SLICE_TIMEOUT` exit, each -> coordinator-turn
+  cycle acting on the exit summary, fresh handle verification at every respawn, and
+  NO respawn at terminal campaign states - a timeout-only run never exercises event
+  detection and proves nothing about events. Option B: two automatic no-nudge heartbeat cycles with
   observer-timestamped duty receipts, completion/stall handling, stop control,
   installed via the guarded terminal-controller path with controller identity and
   duty receipts persisted in state; the controller clears/pauses it at terminal

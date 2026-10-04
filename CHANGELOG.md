@@ -25,7 +25,11 @@ terminal state keeps burning tokens indefinitely.
   `/heartbeat clear` needed. Guardrails: at most ONE nudge per slice, no
   remediation beyond it, single instance per slice, fresh handle verification at
   every respawn. Event paths and exit codes exercised end-to-end against a real
-  `orca-ide terminal list`, real git worktrees, and signal delivery.
+  `orca-ide terminal list`, real git worktrees, and signal delivery. Non-claim,
+  mirroring 1.1.1's precedent: the middle link of the chain - Hermes completion
+  notification turning a watcher exit into a live coordinator turn - was NOT
+  live-tested in this release; that final gate remains an execution-time
+  verification per the standard above.
 - `references/coordinator-heartbeat.md`: full Option A contract — why
   notify-on-COMPLETION plus a bounded exit is a wakeup, the event table, the
   lifecycle (pin fresh identities -> baseline -> classify/act on wake -> re-arm or

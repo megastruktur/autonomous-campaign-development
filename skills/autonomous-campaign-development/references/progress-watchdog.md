@@ -240,7 +240,8 @@ no-progress budget.
    (detail) as needed.
 4. For continuous watching, run `watch --config PATH` as an explicitly owned,
    supervised background process: decide who owns it and how it is supervised BEFORE
-   starting it. A background watcher does not wake a sleeping coordinator TUI and
+   starting it. The observer's own `watch` mode is a background process that does
+   not wake a sleeping coordinator TUI and
    sends no notifications by itself; it only prints lines. It is a reporter, not a
    scheduler. Coordinator wakeups come only from a verified wakeup mechanism - the
    bounded event watcher (Option A) or the native heartbeat (Option B) - per

@@ -89,7 +89,7 @@ emit() {
 import json, sys, time
 event, task, detail = sys.argv[1], sys.argv[2], sys.argv[3]
 line = json.dumps({"v": 1, "kind": "watcher_event", "event": event,
-                   "task": task, "detail": detail[:400], "at": int(time.time())})
+                   "task": task[:200], "detail": detail[:400], "at": int(time.time())})
 print(line, flush=True)
 PY
 }
