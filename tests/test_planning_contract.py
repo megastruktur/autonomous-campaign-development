@@ -12,8 +12,13 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = ROOT / "skills" / "autonomous-campaign-development"
+SKILL_ROOT = ROOT / "skills" / "acd"
 TEMPLATES = SKILL_ROOT / "templates"
+
+SKILL_NAME = "acd"
+SKILL_VERSION = "1.5.0"
+OLD_SKILL_NAME = "-".join(["autonomous", "campaign", "development"])  # checked absent
+REPO_SLUG = f"megastruktur/{OLD_SKILL_NAME}"  # preserved by design
 
 
 class PlanningContractTests(unittest.TestCase):
@@ -69,6 +74,39 @@ class PlanningContractTests(unittest.TestCase):
         self.assertIn("Architecture is a means to satisfy intent", self.reference)
         self.assertIn("never silently drop or invert a requirement", self.reference)
 
+    def test_skill_name_and_version_are_pinned(self):
+        match = re.match(r"^---\n(.*?)\n---\n", self.skill, re.DOTALL)
+        self.assertIsNotNone(match, "SKILL.md must open with frontmatter")
+        frontmatter = match.group(1)
+        self.assertRegex(frontmatter, rf"(?m)^name: {SKILL_NAME}$")
+        self.assertRegex(frontmatter, rf"(?m)^version: {re.escape(SKILL_VERSION)}$")
+        # The short identity replaces the old name; the full product title stays.
+        self.assertIn("# Autonomous Campaign Development", self.skill)
+
+    def test_skill_directory_is_acd(self):
+        self.assertEqual(SKILL_ROOT.name, SKILL_NAME)
+        self.assertTrue((SKILL_ROOT / "SKILL.md").is_file())
+
+    def test_no_old_skill_identity_in_active_sources(self):
+        # Active sources only: README, gitignore, the newest changelog entry,
+        # tests, and the shipped skill payload. Campaign plans/ artifacts and
+        # historical changelog entries are never scanned.
+        candidates = [ROOT / "README.md", ROOT / ".gitignore", ROOT / "CHANGELOG.md"]
+        candidates += sorted((ROOT / "tests").glob("*.py"))
+        candidates += sorted(
+            p for p in SKILL_ROOT.rglob("*")
+            if p.is_file() and p.suffix in {".md", ".json", ".py", ".sh"}
+        )
+        offenders = []
+        for path in candidates:
+            text = path.read_text(encoding="utf-8", errors="replace")
+            if path.name == "CHANGELOG.md":
+                text = text.split("\n## ", 1)[0]  # newest entry only
+            text = text.replace(REPO_SLUG, "<repo>")
+            if OLD_SKILL_NAME in text:
+                offenders.append(str(path.relative_to(ROOT)))
+        self.assertEqual(offenders, [])
+
     def test_planning_state_tracks_gate_and_hashes(self):
         self.assertEqual(self.planning_state["phase"], "intent")
         self.assertFalse(
@@ -108,7 +146,7 @@ class PlanningContractTests(unittest.TestCase):
     def test_planning_state_template_is_not_ignored(self):
         result = subprocess.run(
             ["git", "check-ignore", "--quiet",
-             "skills/autonomous-campaign-development/templates/PLANNING_STATE.json"],
+             "skills/acd/templates/PLANNING_STATE.json"],
             cwd=ROOT,
             check=False,
         )

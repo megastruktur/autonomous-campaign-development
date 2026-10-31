@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.5.0 — 2026-10-31
+
+Focus: skill identity. The skill directory and invocation name are now `acd`; the
+product, procedure, and repository are unchanged.
+
+### Changed
+
+- Skill directory is now `skills/acd`; frontmatter `name` is `acd` and `version` is
+  `1.5.0`. The full product title "Autonomous Campaign Development" and the repository
+  (`megastruktur/autonomous-campaign-development`) are unchanged.
+- README install/update/uninstall commands and the Hermes route use the `acd` skill
+  name and the `/acd` invocation; installed-path examples use `~/.hermes/skills/acd`.
+- Static tests pin the `acd` directory/frontmatter identity, version `1.5.0`, and the
+  absence of the old skill path or invocation in active sources; campaign plans and
+  historical changelog entries are excluded from that check.
+
 ## 1.4.0 — 2026-10-31
 
 Focus: evidence-based planning. Planning now has four mandatory phases with an auditable

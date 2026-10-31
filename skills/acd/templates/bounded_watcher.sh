@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # bounded_watcher.sh - Bounded event-driven coordinator wakeup (Option A).
 #
-# Part of the autonomous-campaign-development skill (v1.2.0). The COORDINATOR
+# Part of the acd skill (Autonomous Campaign Development, v1.2.0). The COORDINATOR
 # spawns this script as a background process with completion notification
 # (Hermes: terminal(command="...", background=true, notify=true)). Installed
 # Hermes maps boolean notify to notify-on-COMPLETION, so this script is a

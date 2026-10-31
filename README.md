@@ -25,7 +25,7 @@ event watcher — it runs only when a coordinator explicitly spawns it).
   plan and separately starts execution; destructive actions still stop for explicit
   permission.
 
-Version 1.4.0 · MIT License.
+Version 1.5.0 · MIT License.
 
 ## Requirements
 
@@ -51,7 +51,7 @@ the skill available. It uses the same community skills CLI Orca itself uses
 
 ```bash
 npx --yes skills add megastruktur/autonomous-campaign-development \
-  --skill autonomous-campaign-development --agent universal -y
+  --skill acd --agent universal -y
 ```
 
 - No `--global`: the skill installs **project-scoped** into that project's
@@ -63,9 +63,9 @@ npx --yes skills add megastruktur/autonomous-campaign-development \
 Loading prerequisites: Orca's Skills UI scans installed skill homes — including the
 shared Agent Skills directory and OMP's `~/.omp/agent/skills` — so installed skills show
 up without manual symlinking. For OMP specifically, the community CLI has no
-`--agent omp` target: place or point the skill at OMP's documented skill path, or after
-the project install above have OMP read the installed copy at
-`.agents/skills/autonomous-campaign-development/SKILL.md` explicitly.
+`--agent omp` target: place or point the skill at OMP's documented skill path, or
+have OMP read the Hermes-installed copy at `~/.hermes/skills/acd/SKILL.md`
+explicitly.
 
 Note: `npx skills` collects anonymous telemetry by default; opt out with
 `DISABLE_TELEMETRY=1` ([docs](https://skills.sh/docs/cli)).
@@ -124,9 +124,9 @@ If you use Hermes with an existing profile:
 
 ```bash
 hermes -p planner skills install \
-  megastruktur/autonomous-campaign-development/skills/autonomous-campaign-development
+  megastruktur/autonomous-campaign-development/skills/acd
 # then preload it in a chat:
-hermes -p planner chat --skills autonomous-campaign-development
+hermes -p planner chat --skills acd
 ```
 
 #### Updating an existing Hermes installation
@@ -134,7 +134,7 @@ hermes -p planner chat --skills autonomous-campaign-development
 How you update depends on how the skill was originally installed — check before acting:
 
 - **Hub-installed source** (`hermes -p planner skills` shows a hub/registry source):
-  `hermes -p planner skills update autonomous-campaign-development` updates it.
+  `hermes -p planner skills update acd` updates it.
   Avoid `--force`: it overwrites local edits.
 - **Locally authored source** (`source=local`, e.g. a hand-placed or edited copy):
   there is no safe blanket update. Back up the installed copy, review the incoming
@@ -223,7 +223,7 @@ The skill is a coordinator contract for one development campaign:
 ## Usage
 
 Installing the skill starts nothing and grants no permissions. Once your planning agent
-has loaded it, request a campaign in plain words, for example:
+has loaded it (explicit invocation: `/acd`), request a campaign in plain words, for example:
 
 > Start an autonomous campaign: add OAuth login and a profile settings page to this
 > repo. Plan the tasks, ask me the model questions, and get my approval before any
@@ -252,7 +252,7 @@ crash:
 ## Repository contents
 
 ```
-skills/autonomous-campaign-development/
+skills/acd/
 ├── SKILL.md                                 # the skill: contract, procedure, pitfalls
 ├── references/
 │   ├── coordinator-heartbeat.md              # coordinator wakeup contract: Option A watcher + Option B heartbeat (v1.2.0)
@@ -297,7 +297,7 @@ and tabletop walkthroughs in `references/validation-tabletop.md` before relying 
 With the community skills CLI, in the project where it is installed:
 
 ```bash
-npx skills remove autonomous-campaign-development   # remove from agent directories
+npx skills remove acd   # remove from agent directories
 ```
 
 For updates, re-run the exact `skills add` command from [Install](#install-recommended-orca-workspace-project-scope)

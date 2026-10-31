@@ -16,7 +16,7 @@ __pycache__/
 # Campaign runtime artifacts (plans, state, evidence) — generated per campaign
 plans/
 *_STATE.json
-!skills/autonomous-campaign-development/templates/*_STATE.json
+!skills/acd/templates/*_STATE.json
 *_EVENTS.jsonl
 *_evidence/
 *_REPORT.md

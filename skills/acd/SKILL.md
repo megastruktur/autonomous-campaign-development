@@ -1,7 +1,7 @@
 ---
-name: autonomous-campaign-development
+name: acd
 description: Orchestrate multi-agent dev campaigns in Orca worktrees
-version: 1.4.0
+version: 1.5.0
 metadata:
   hermes:
     category: software-development

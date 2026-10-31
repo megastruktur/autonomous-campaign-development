@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 SCRIPTS = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "skills", "autonomous-campaign-development", "scripts")
+    "skills", "acd", "scripts")
 sys.path.insert(0, SCRIPTS)
 
 import campaign_watch as cw  # noqa: E402
