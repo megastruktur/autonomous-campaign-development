@@ -287,7 +287,7 @@ Nothing auto-starts: the scripts run only when explicitly invoked.
 
 The watchdog's numerical thresholds (`no_step_seconds`, `retry_window_seconds`,
 `stale_seconds`) are DIAGNOSIS triggers only. The campaign's attempt budget
-(`attempt_budget_seconds`, default 2100; see SKILL.md section 10 and
+(`attempt_budget_seconds`, default 2100; see SKILL.md section 12 and
 [state-and-recovery.md](state-and-recovery.md)) is a separate hard procedural cap
 enforced by the coordinator/runtime through scoped control - never by the observer,
 which never kills, nudges, or remediates. The observer has no CLI flags or config

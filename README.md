@@ -25,7 +25,7 @@ event watcher — it runs only when a coordinator explicitly spawns it).
   plan and separately starts execution; destructive actions still stop for explicit
   permission.
 
-Version 1.2.0 · MIT License.
+Version 1.4.0 · MIT License.
 
 ## Requirements
 
@@ -147,10 +147,14 @@ How you update depends on how the skill was originally installed — check befor
 
 The skill is a coordinator contract for one development campaign:
 
-- **Intake & plan**: focused clarification questions and improvement proposals before
-  locking the plan; durable English campaign artifacts (`PLAN.md`, per-task files,
-  `HANDOFF.md`, `MANIFEST.json`, `TODO.md`, `STATE.json`, `EVENTS.jsonl`, evidence,
-  final report) written inside the repository — never chat memory.
+- **Four-phase planning gate (v1.4.0)**: (1) capture intent, brainstorm functionality, and
+  perform MANDATORY bounded read-only repository discovery; (2) perform MANDATORY web
+  research scaled to the feature and design an architecture from cited evidence plus actual
+  repository patterns; (3) commission an independent critique covering intent fidelity,
+  architecture, Security, UX, and execution readiness, then revise and repeat until a fresh
+  `CONVERGED` verdict binds the exact current design hashes; (4) only then create the DAG
+  and task files. Explicit user intent outranks architectural preference. Durable
+  `INTENT.md`, `RESEARCH.md`, and `CRITIQUE.md` artifacts are frozen into the manifest.
 - **Planning/execution boundary (v1.1.0)**: one explicit plan approval authorizes WHAT
   may happen — it never starts agents. The planning session writes a durable HANDOFF
   plus a SHA-256 manifest of the frozen plan files and stops; execution begins only in a
@@ -225,7 +229,9 @@ has loaded it, request a campaign in plain words, for example:
 > repo. Plan the tasks, ask me the model questions, and get my approval before any
 > agent starts working.
 
-The skill then drives intake → plan → model questionnaire → **one approval gate** (WHAT
+The skill then drives intent + repository discovery → web research + architecture →
+independent critique/revision until convergence → DAG + task decomposition → model
+questionnaire → **one approval gate** (WHAT
 may happen) → HANDOFF + manifest written → the planning session **stops**. You begin
 execution by pasting the START prompt (from the HANDOFF) into a **new, clean coordinator
 session**; that session validates the manifest, the repo state, and its own capabilities
@@ -250,6 +256,7 @@ skills/autonomous-campaign-development/
 ├── SKILL.md                                 # the skill: contract, procedure, pitfalls
 ├── references/
 │   ├── coordinator-heartbeat.md              # coordinator wakeup contract: Option A watcher + Option B heartbeat (v1.2.0)
+│   ├── planning-and-design.md                # mandatory intent/research/critique/DAG gate (v1.4.0)
 │   ├── handoff-and-start.md                 # planning boundary, HANDOFF, manifest, START
 │   ├── hermes-orca-omp.md                   # dispatch mechanics and command shapes
 │   ├── progress-watchdog.md                 # progress semantics, observer CLI contract
@@ -257,6 +264,10 @@ skills/autonomous-campaign-development/
 │   ├── state-and-recovery.md                # state schema, lifecycle, resume
 │   └── validation-tabletop.md               # static checks and tabletop walkthroughs
 ├── templates/
+│   ├── INTENT.md                            # intent + mandatory repository discovery
+│   ├── RESEARCH.md                          # cited web research + architecture/Security/UX
+│   ├── CRITIQUE.md                          # independent five-lens revision/convergence history
+│   ├── PLANNING_STATE.json                  # mutable planning-phase and hash gate
 │   ├── PLAN.md                              # campaign plan template
 │   ├── TASK.md                              # per-task file template
 │   ├── HANDOFF.md                           # execution handoff + manifest shape

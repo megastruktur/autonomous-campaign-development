@@ -11,7 +11,30 @@
 
 ## Goal and context
 
-{{what the campaign delivers and why - bounded context discovery only, no deep code exploration}}
+{{what the campaign delivers and why}}
+
+## Converged design evidence (MANDATORY DAG gate)
+
+- Intent + bounded read-only repository discovery: `{{prefix}}_INTENT.md`
+- Web research + architecture: `{{prefix}}_RESEARCH.md`
+- Independent critique history: `{{prefix}}_CRITIQUE.md`
+- Final verdict: `CONVERGED`, round {{round}}, critic {{independent_critic_identity}}
+- Exact converged INTENT SHA-256: {{hash}}
+- Exact converged RESEARCH SHA-256: {{hash}}
+- Repository discovery completed: {{evidence_summary}}
+- Web sources actually retrieved/read: {{source_count_and_ids}}
+- Unresolved critical/major findings: none
+- Contradiction of explicit user intent: none
+
+Do not instantiate this template or create task files until these conditions are true and
+recorded in STATE plus `{prefix}_PLANNING_STATE.json`. Full procedure:
+[../references/planning-and-design.md](../references/planning-and-design.md).
+
+## Traceability to converged design
+
+| Campaign/task outcome | Intent section | Architecture decision / sources | Security/UX requirement |
+|---|---|---|---|
+| {{outcome}} | {{reference}} | {{decision_and_source_ids}} | {{requirements_or_scoped_rationale}} |
 
 ## Clarifications and decisions
 

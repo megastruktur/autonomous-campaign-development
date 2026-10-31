@@ -1,7 +1,7 @@
 ---
 name: autonomous-campaign-development
 description: Orchestrate multi-agent dev campaigns in Orca worktrees
-version: 1.3.0
+version: 1.4.0
 metadata:
   hermes:
     category: software-development
@@ -46,19 +46,46 @@ verified wakeup mechanism - the bounded event watcher with completion notificati
 
 ## Procedure
 
-### 1. Intake
+### 1. Intent and mandatory repository discovery
 
-Read the request; ask focused clarification questions; propose improvements before locking
-the plan. Bounded context discovery only - do not deeply explore implementation code while
-planning. Settle shared API/schema/resource contracts centrally; sibling tasks never
-design shared interfaces independently. Size tasks for the actually chosen worker model,
-not a hard-coded model.
+Capture user intent, clarify consequential ambiguity, and brainstorm functionality; the
+coordinator may reason and recommend scope. Perform MANDATORY bounded, read-only repository
+discovery of relevant instructions, dependencies, interfaces, patterns, and test/runtime
+entry points - trace symbols rather than guessing, but do not deeply implement or perform an
+exhaustive review. Record outcomes and evidence in `{prefix}_INTENT.md`. Do not create a DAG.
+Full contract: [references/planning-and-design.md](references/planning-and-design.md).
 
-### 2. Plan
+### 2. Web research and architecture
 
-Create durable files inside the repository (never chat memory or temporary directories):
+Perform MANDATORY web research for every campaign, scaled to feature size, novelty, and risk.
+Retrieve and cite current primary/authoritative sources; never substitute model memory for
+failed web access. Produce `{prefix}_RESEARCH.md`: compare architecture patterns, choose one
+using repository evidence and research, and map decisions back to intent. Include substantive,
+proportionate Security and UX analysis, especially for big, sensitive, or user-facing features.
+Settle shared API/schema/resource direction centrally. No task DAG yet.
+
+### 3. Independent critique and revision loop
+
+Commission an independent read-only critic and preserve rounds in `{prefix}_CRITIQUE.md`.
+Critique the exact hashed INTENT + RESEARCH through FIVE lenses: intent fidelity,
+architecture/research evidence, Security, UX, and execution readiness. Revise the design,
+answer every finding, and repeat a fresh full critique. Loop until `CONVERGED` with no
+unresolved blocking findings, bound to the current artifact hashes. If architecture
+contradicts explicit user intent, user intent wins: revise the architecture or surface a
+genuine infeasibility/trade-off; never silently change requirements. Material intent changes
+return to phase 1; material architecture/research changes return to phase 2. Non-convergence
+pauses with evidence and options.
+
+### 4. DAG and task decomposition (only after convergence)
+
+The DAG gate requires completed intent + repository discovery, actual cited web research,
+and a `CONVERGED` independent critique bound to current INTENT/RESEARCH hashes; record these
+in `{prefix}_PLANNING_STATE.json` and STATE. Only now create durable files inside the
+repository (never chat memory or temporary directories):
 `plans/{campaign_name}/{prefix}_PLAN.md` plus one `{prefix}_{task_name}.md` per task.
 Templates: [templates/PLAN.md](templates/PLAN.md), [templates/TASK.md](templates/TASK.md).
+Preserve traceability from intent through research/converged architecture to each task and
+its acceptance/runtime scenarios; decomposition may not silently expand or contradict intent.
 
 - Campaign/task names are English lowercase slugs; `{prefix}` is a unique short
   abbreviation. Worktree display names are `{prefix}-{task_name}`; reserve
@@ -72,9 +99,9 @@ Templates: [templates/PLAN.md](templates/PLAN.md), [templates/TASK.md](templates
 Plan the DAG with explicit dependency edges and resource exclusions (files, APIs,
 migration ordering, schema ownership, lockfiles, build output, ports, fixture data,
 databases, external side effects). Possible parallel groups are explanatory views, never
-fixed-wave barriers.
+fixed-wave barriers. Size tasks for the actually chosen worker model, not a hard-coded model.
 
-### 3. Model questionnaire
+### 5. Model questionnaire
 
 Before development, ask once: coding model, fallback model, independent reviewer model,
 and optionally a heavyweight final-review model for exact-head final reviews. Each
@@ -89,21 +116,24 @@ repair is allowed; a failure requiring another provider or model pauses for user
 input. Never silently pick an unapproved model, never print credentials. Mechanics:
 [references/hermes-orca-omp.md](references/hermes-orca-omp.md).
 
-### 4. One approval gate (WHAT)
+### 6. One approval gate (WHAT)
 
-Present the plan plus resolved models; obtain ONE explicit approval of WHAT the campaign
+Present the plan plus resolved models and the converged design; obtain ONE explicit
+approval of WHAT the campaign
 may do. It authorizes scoped development, tests, reviews, task squash merges, the
 campaign completion merge, and safe cleanup - record the final-merge strategy (default
 `--no-ff`) in the approval. Approval is NOT START and adds no per-task human gates: the
 planning session then writes the durable HANDOFF plus its hash manifest
 ([templates/HANDOFF.md](templates/HANDOFF.md)), records state lifecycle
 `awaiting_fresh_session_start`, and STOPS - it never creates execution worktrees or
-starts agents, even though the plan is approved. STOP and ask the user when: scope or
+starts coding/execution agents, even though the plan is approved. The phase-3 read-only
+planning critic is the sole planning-time delegated-session exception, not execution START.
+STOP and ask the user when: scope or
 contracts change in a way that needs a decision, a destructive action looms, capability
 or access is missing, or non-convergence is evidence-based. Push, publication, and
 deployment are separate explicit permissions.
 
-### 5. HANDOFF and fresh-session START
+### 7. HANDOFF and fresh-session START
 
 Execution begins ONLY in a distinct, new, clean coordinator session when the user
 explicitly says START (the exact prompt from the HANDOFF), never in the planning
@@ -129,7 +159,7 @@ is NOT autonomous: say so. Full wakeup contract:
 [references/coordinator-heartbeat.md](references/coordinator-heartbeat.md). Full START
 contract: [references/handoff-and-start.md](references/handoff-and-start.md).
 
-### 6. Topology
+### 8. Topology
 
 The EXECUTION session (after START) captures/validates the original NAMED target branch
 and its full starting SHA; do not assume main/master and do not reinterpret a detached
@@ -142,7 +172,7 @@ names: record the actually returned branch and HEAD; on a HEAD mismatch, do not 
 Full contract:
 [references/runtime-review-and-integration.md](references/runtime-review-and-integration.md).
 
-### 7. Per-task loop
+### 9. Per-task loop
 
 Mandatory stages in order: develop -> runtime test-loop -> independent review-loop -> squash
 integration/conflict handling -> post-merge runtime smoke -> preserve evidence and cleanup
@@ -155,7 +185,7 @@ contracts, diff base/tip, runtime evidence, known findings) - author self-review
 optional preparation, never a gate. Detailed contracts:
 [references/runtime-review-and-integration.md](references/runtime-review-and-integration.md).
 
-### 8. Concurrency
+### 10. Concurrency
 
 At most THREE simultaneously active coding agents, fix and remediation agents included;
 no hidden fanout. One writer per worktree; reviewer ownership prevents simultaneous
@@ -164,7 +194,7 @@ squash-integrated into the campaign, and post-merge smoke tested. A task release
 dependents the same way - never on the executor's done message. Cleanup is mandatory,
 tracked, and gates resource reuse.
 
-### 9. State and monitoring
+### 11. State and monitoring
 
 Canonical campaign state lives in the campaign directory as `{prefix}_STATE.json`
 (schema 2: lifecycle `planning`/`awaiting_fresh_session_start`/`executing`/`completed`
@@ -213,7 +243,7 @@ never healthy. The bundled observer scripts are optional, observer-only helpers,
 authoritative and never mutating. USE the packaged observer or bounded manual status
 checks as shipped: do not keep editing or rebuilding watchers during execution - if
 monitoring is uncertain, report unknown and apply the declared attempt budget
-(section 10), and spin watcher improvements off as a separate maintenance task.
+(section 12), and spin watcher improvements off as a separate maintenance task.
 Execution stays visible: dispatch agents as interactive OMP TUIs in ordinary Orca
 worktree tabs, not hidden background (`-p`) runs, by default; if the user explicitly
 approves a headless run, verify the session is discoverable/linkable and disclose it
@@ -223,7 +253,7 @@ duplicate writer behind when moving an agent between UIs. Semantics and CLI cont
 [references/progress-watchdog.md](references/progress-watchdog.md). Schema, crash
 windows, resume and remediation: [references/state-and-recovery.md](references/state-and-recovery.md).
 
-### 10. Remediation and non-convergence
+### 12. Remediation and non-convergence
 
 Ladder: diagnose -> targeted nudge, verified by new progress -> approved fallback switch
 where appropriate -> fresh session with durable handoff when needed. Never blind repeated
@@ -265,7 +295,7 @@ Every execution attempt runs under the approved bounded-attempt policy (defaults
 
 Rules: [references/state-and-recovery.md](references/state-and-recovery.md#remediation-and-non-convergence).
 
-### 11. End of campaign
+### 13. End of campaign
 
 Preconditions: every task TODO done, every required runtime scenario exercised, full
 campaign acceptance/seams runtime test plus independent final review at the exact
@@ -278,8 +308,19 @@ separately approved; merge is not user delivery. Endgame and cleanup contract:
 [references/runtime-review-and-integration.md](references/runtime-review-and-integration.md#cleanup).
 
 ## Pitfalls
-- Treating plan approval as execution start: the planning session never creates
-  worktrees or agents; START belongs to a distinct fresh session bound to the manifest.
+- Creating a DAG before mandatory repository discovery, actual cited web research, and an
+  independent `CONVERGED` critique bound to the current INTENT/RESEARCH hashes; file
+  existence or self-critique alone never opens the gate.
+- Treating web snippets or model memory as research, inventing sources, or continuing after
+  web-access failure without recording a blocker and pausing.
+- Letting an architectural pattern silently override explicit user intent; revise the design
+  or surface a real infeasibility/trade-off instead.
+- Declaring convergence after fixing only a critic's named example: every revision gets a
+  fresh full five-lens critique, including Security and UX, and changed hashes invalidate
+  every earlier verdict.
+- Treating plan approval as execution start: the planning session never creates execution
+  worktrees or coding/execution agents (the phase-3 read-only planning critic is the sole
+  delegated-session exception); START belongs to a distinct fresh session bound to the manifest.
 - Starting execution in the planning session because the user says "go" - refuse and
   hand over the START prompt; missing session identity never claims enforced clean
   context.
@@ -361,6 +402,12 @@ separately approved; merge is not user delivery. Endgame and cleanup contract:
 
 ## Verification
 
+- Planning gate: INTENT records actual bounded read-only repository discovery; RESEARCH
+  contains actually retrieved/cited web evidence plus architecture, Security, and UX
+  analysis; an independent critic's final `CONVERGED` verdict binds the current exact
+  INTENT/RESEARCH hashes and all findings have dispositions. DAG/task files do not predate
+  this gate, and each task preserves design traceability. The manifest freezes INTENT,
+  RESEARCH, CRITIQUE, PLAN, tasks/contracts, and HANDOFF.
 - Campaign health: state revision advances with matching events; every active session has
   recent evidence; no task sits at a later stage than its bound evidence supports;
   dependents released only after prerequisite post-merge smoke; cleanup checkboxes reflect
@@ -377,8 +424,8 @@ separately approved; merge is not user delivery. Endgame and cleanup contract:
   campaign states, reading the actual response back from the terminal.
 - Start boundary: state lifecycle, sessions, and start records are coherent - start
   exists only in a distinct execution session whose recorded manifest hash matches the
-  frozen files; the planning session created no worktrees or agents; resumes of a
-  started campaign carry the original approval without re-gating.
+  frozen files; the planning session created no execution worktrees or coding agents;
+  resumes of a started campaign carry the original approval without re-gating.
 - Progress claims distinguish last observed, last successful assistant, last completed
   tool (errors separate), and last semantic progress; unknown is never reported healthy.
 - Before relying on a modified copy of this skill, run the static checks and tabletop

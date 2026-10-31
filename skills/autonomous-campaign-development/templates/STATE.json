@@ -1,5 +1,5 @@
 {
-  "_readme": "Template for {prefix}_STATE.json. Replace every null and the one example task entry; keep filename-convention strings ({prefix}_*) as written. Sole writer: the coordinator. Atomic replace + revision bump on every write. Unknown stays null. schema_version 2 (skill 1.1.0): adds lifecycle, sessions, plan_manifest, start. Legacy schema_version 1 or missing: see references/state-and-recovery.md before resuming; never fabricate the new fields. execution_policy (campaign-level attempt budget defaults; extensions only via explicit predeclared per-task long-job budgets) and tasks[].attempt/unproductive_attempts record the bounded-attempt policy from SKILL.md section 10 - procedural enforcement, no automated flags.",
+  "_readme": "Template for {prefix}_STATE.json. Replace every null and the one example task entry; keep filename-convention strings ({prefix}_*) as written. Sole writer: the coordinator. Atomic replace + revision bump on every write. Unknown stays null. schema_version 2: lifecycle, sessions, plan_manifest, start; planning records the four-phase design gate and exact converged hashes (skill 1.4.0). Legacy schema_version 1 or missing: see references/state-and-recovery.md before resuming; never fabricate the new fields. execution_policy (campaign-level attempt budget defaults; extensions only via explicit predeclared per-task long-job budgets) and tasks[].attempt/unproductive_attempts record the bounded-attempt policy from SKILL.md section 12 - procedural enforcement, no automated flags.",
   "schema_version": 2,
   "revision": 0,
   "lifecycle": "planning",
@@ -19,6 +19,14 @@
     "starting_sha": null,
     "campaign_worktree": null,
     "campaign_branch": null
+  },
+  "planning": {
+    "phase": "intent",
+    "phase_state_path": "{prefix}_PLANNING_STATE.json",
+    "intent": { "path": "{prefix}_INTENT.md", "sha256": null, "repository_discovery_completed": false },
+    "research": { "path": "{prefix}_RESEARCH.md", "sha256": null, "web_research_completed": false },
+    "critique": { "path": "{prefix}_CRITIQUE.md", "round": 0, "verdict": null, "critic_identity": null },
+    "convergence": { "passed": false, "intent_sha256": null, "research_sha256": null }
   },
   "plan_manifest": { "path": "{prefix}_MANIFEST.json", "sha256": null },
   "approval": {

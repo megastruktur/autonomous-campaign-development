@@ -52,7 +52,7 @@ Lifecycle and rules:
 3. **On wake: classify, act, re-arm or stop.** Read state/TODO/evidence, classify
    the event, and continue the campaign as already authorized (dispatch, review
    commissioning, integration - within the approved plan and attempt budget,
-   section 10). `SLICE_TIMEOUT` is a scheduled check-in, not a failure;
+   section 12). `SLICE_TIMEOUT` is a scheduled check-in, not a failure;
    `SILENCE_NUDGE` is a diagnosis trigger - the nudge already sent was the one
    scoped steer for that slice; the coordinator decides any next remediation step.
    While the campaign is executing, spawn a FRESH watcher with FRESHLY verified
@@ -78,7 +78,7 @@ across process death or reboot.
 Guardrails:
 
 - At most ONE nudge per slice; the watcher never kills, merges, switches models, or
-  remediates beyond that nudge. Remediation stays with the coordinator (section 10).
+  remediates beyond that nudge. Remediation stays with the coordinator (section 12).
 - The watcher writes nothing to campaign state; stdout is one bounded JSON line
   (<=1024 bytes), progress logs go to stderr.
 - One watcher instance per campaign slice (the template's optional lock file exits

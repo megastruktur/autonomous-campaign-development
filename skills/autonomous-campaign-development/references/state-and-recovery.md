@@ -11,6 +11,7 @@ All operational artifacts share the campaign prefix (for example `acd_`):
 
 | File | Role | Writer |
 |---|---|---|
+| `{prefix}_PLANNING_STATE.json` | mutable four-phase planning gate, hashes, critique/convergence | coordinator only |
 | `{prefix}_STATE.json` | canonical machine state | coordinator only |
 | `{prefix}_TODO.md` | human projection of state | coordinator only |
 | `{prefix}_EVENTS.jsonl` | append-only chronological events | coordinator only |
@@ -49,7 +50,13 @@ Template: [../templates/STATE.json](../templates/STATE.json). Key enums:
 - Status mapping: internal `in_review` <-> Orca external `in-review`; internal
   `in_progress` <-> Orca `in-progress`. No other spellings.
 - `lifecycle`: `planning` -> `awaiting_fresh_session_start` -> `executing` ->
-  `completed`; the `pause` block is orthogonal. `sessions.planning` and
+  `completed`; the `pause` block is orthogonal. During `planning`, `planning.phase` is
+  `intent` -> `research` -> `critique` -> `decomposition` -> `approved`; repository
+  discovery and actual web research are mandatory. A DAG may be created only when
+  `planning.convergence.passed` is true and the independent critic's `CONVERGED` verdict
+  binds the CURRENT INTENT/RESEARCH SHA-256 values. The mutable phase-state file mirrors
+  these values; file existence alone never proves convergence. Full design gate:
+  [planning-and-design.md](planning-and-design.md). `sessions.planning` and
   `sessions.execution` record session identities independently; `approval` (the plan
   gate) and `start` (the execution start, bound to `plan_manifest.sha256`) are separate
   records - see [handoff-and-start.md](handoff-and-start.md).
@@ -71,7 +78,8 @@ final-stage statuses, next action, active pause with actor.
 
 ## State lifecycle and legacy migration
 
-Lifecycle transitions are event-logged: `planning` -> `awaiting_fresh_session_start`
+Lifecycle transitions are event-logged: `planning` (including the four gated design phases)
+-> `awaiting_fresh_session_start`
 (HANDOFF + manifest written, planning session stopped) -> `executing` (fresh-session
 START validated) -> `completed`. A restart never re-runs a completed transition.
 

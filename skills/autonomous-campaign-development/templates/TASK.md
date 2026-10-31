@@ -32,6 +32,16 @@ report; do not fix it.
 - Schema/data: {{contract_reference}}
 - Other: {{contract_reference}}
 
+## Design traceability
+
+- Converged INTENT / RESEARCH / CRITIQUE: {{paths_and_hashes}}
+- Architecture decisions and shared contracts consumed: {{references}}
+- Security requirements and abuse cases: {{references_or_scoped_analysis}}
+- UX requirements and journey/states: {{references_or_scoped_analysis}}
+
+This task implements the converged design; it must not expand or contradict user intent.
+If implementation reveals a material design/intent conflict, stop and return it to planning.
+
 ## Acceptance criteria
 
 1. {{observable_criterion}}

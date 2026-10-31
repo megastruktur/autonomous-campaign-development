@@ -30,6 +30,13 @@ smoke before release - prose alone enforces nothing.
    wording).
 
 
+## Planning validation
+
+Static checks additionally require the four gated phases, mandatory repository/web evidence,
+the five critique lenses (including Security and UX), and hash-bound convergence before DAG
+creation. INTENT, RESEARCH, and CRITIQUE belong in the frozen manifest; the mutable planning
+phase state does not. Tabletop scenarios 42-47 exercise these requirements.
+
 ## Tabletop scenarios
 
 Walk the written procedure (SKILL.md Procedure + referenced contracts) and record what
@@ -53,7 +60,7 @@ the text instructs at each step. Expected outcomes below are the pass criteria.
 | 14 | Fix lands for one path of a defect class (e.g. claim) | Re-review covers release/rebind siblings of the same class plus introduced regressions |
 | 15 | Acceptance test fails once, passes on rerun | Not dismissed as flaky: conditions recorded, reproducible explanation sought, risk assessed; unresolved stays unresolved |
 | 16 | Review process exits rc=0 with no verdict text | Not PASS: explicit complete verdict required for the expected snapshot; re-commission |
-| 17 | Plan approved; user says "start now" in the planning session | Refusal: approval is not START; HANDOFF + manifest written, lifecycle `awaiting_fresh_session_start`, START prompt handed over; no worktrees/terminals/agents created |
+| 17 | Plan approved; user says "start now" in the planning session | Refusal: approval is not START; HANDOFF + manifest written, lifecycle `awaiting_fresh_session_start`, START prompt handed over; no execution worktrees/coding agents created (the earlier phase-3 read-only planning critic is not execution) |
 | 18 | Fresh session receives the exact START prompt; manifest matches state | Session identity recorded; all file hashes recomputed and matched; repo/target/SHA/worktree-ownership/capability checks pass; start recorded; lifecycle `executing`; only then topology begins |
 | 19 | START with a PLAN file edited after the manifest was written | Hash mismatch = consent invalidated; stop and reconcile (re-approve or restore); never quietly re-hash the manifest |
 | 20 | Legacy STATE (schema 1), approved, nothing begun | No fabricated start/manifest; lifecycle set to `awaiting_fresh_session_start`; fresh-session START required; null manifest handled via recorded operator confirmation |
@@ -78,6 +85,13 @@ the text instructs at each step. Expected outcomes below are the pass criteria.
 | 39 | Agent dispatched hidden/headless; `terminal focus` returns `navigated:false` | Not treated as user-visible: verify discoverability/link, disclose to the user, bind handles + session identity, no duplicate writer when moving UI |
 | 40 | Bounded watcher running; a session JSONL is already 26m silent at spawn; later the campaign reaches `completed` | First poll fires `SILENCE_NUDGE`: exactly one bounded nudge to the pinned handle, exit 0, completion notification wakes the coordinator; at `completed` the coordinator spawns NO next slice (auto-stop - no daemon, no token burn); a dead watcher-hosting terminal is reported as monitoring-down, never claimed as coverage |
 | 41 | Coordinator resolves the current campaign tip to a raw SHA and passes it as `--base-branch` | Refused: task worktrees take `--base-branch <campaign-branch>` (the branch Orca returned) plus `--parent-worktree` under `{prefix}-campaign`; re-resolve the branch tip against the recorded current tip, then create |
+
+| 42 | Coordinator tries to create a DAG immediately after intake | Forbidden: mandatory read-only repository discovery, cited web research/architecture, and independent hash-bound CONVERGED critique must complete first |
+| 43 | Web search/source retrieval is unavailable | Record blocker and pause for restored access/user direction; no model-knowledge-only architecture, invented citations, or DAG |
+| 44 | Critic finds that the chosen architecture contradicts explicit user intent | Preserve intent; revise architecture or surface genuine infeasibility/trade-off; no silent requirement change; fresh critique required |
+| 45 | Critique finds a major Security or UX omission; revision fixes only that section | Coordinator responds to finding, updates hashes, and obtains a FRESH full five-lens independent critique; previous verdict is stale |
+| 46 | Critique says CONVERGED but INTENT or RESEARCH changed afterward | Hash mismatch invalidates convergence; no DAG/task files until a fresh critique binds current artifacts |
+| 47 | Small conventional feature vs big user-facing/security-sensitive feature | Both require repository discovery and web research; breadth scales, but big features receive substantive scenario-based Security and UX analysis rather than N/A |
 
 ## Recording results
 

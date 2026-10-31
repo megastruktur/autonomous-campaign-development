@@ -18,7 +18,7 @@
 #   SILENCE_NUDGE exit 0  a watched session JSONL has been quiet for more than
 #                         WATCHER_SILENCE_SECONDS (default 1500s = 25m); the
 #                         watcher sent ONE bounded status nudge to the pinned
-#                         terminal (a scoped steer per SKILL.md section 10)
+#                         terminal (a scoped steer per SKILL.md section 12)
 #                         and exits so the coordinator regains control
 #   SLICE_TIMEOUT exit 0  the polling window elapsed with no event: a
 #                         scheduled coordinator check-in

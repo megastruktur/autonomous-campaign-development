@@ -7,12 +7,17 @@ not a per-task human gate - it happens once per campaign.
 
 ## Planning session boundary
 
-The planning session performs intake, clarification, plan authoring, the model
-questionnaire, and approval capture. It writes ONLY planning artifacts under
-`plans/{campaign_name}/`: PLAN, task files, HANDOFF, MANIFEST, and the initial STATE
-(`lifecycle: planning`). It must NOT create execution worktrees or the integration
-worktree, start agents or terminals, or dispatch anything - even after the plan is
-approved. On approval it:
+The planning session performs the four gated planning phases (intent + mandatory repository
+discovery; web research + architecture; independent critique/revision; DAG decomposition),
+the model questionnaire, and approval capture. It writes ONLY planning artifacts under
+`plans/{campaign_name}/`: INTENT, RESEARCH, CRITIQUE, planning phase state, PLAN, task files,
+HANDOFF, MANIFEST, and the initial STATE (`lifecycle: planning`). The DAG is created only
+after an independent `CONVERGED` verdict bound to the current design hashes. It must NOT
+create execution worktrees or the integration worktree, start coding/execution agents or
+Orca execution terminals, or dispatch implementation - even after the plan is approved.
+The ONLY planning-time delegated session is the phase-3 read-only planning critic, which
+uses available reviewer tooling outside the execution topology and cannot implement.
+On approval it:
 
 1. Writes `{prefix}_HANDOFF.md` and `{prefix}_MANIFEST.json` (templates:
    [../templates/HANDOFF.md](../templates/HANDOFF.md)).
@@ -42,9 +47,10 @@ never invented.
 
 ## Manifest
 
-`{prefix}_MANIFEST.json` freezes the planning payload: SHA-256 of the PLAN file, every
-task file, every standalone shared-contract file, and the HANDOFF. Excluded: STATE,
-TODO, EVENTS, evidence (mutable execution artifacts - their later changes must not
+`{prefix}_MANIFEST.json` freezes the planning payload: SHA-256 of the INTENT, RESEARCH,
+CRITIQUE, and PLAN files, every task file, every standalone shared-contract file, and the
+HANDOFF. Excluded: STATE, the mutable planning phase state, TODO, EVENTS, evidence (mutable
+execution artifacts - their later changes must not
 invalidate the plan approval), and the manifest itself (no recursive self-hash). The
 manifest is written once by the planning session and is immutable afterwards; its own
 SHA-256 is recorded in STATE (`plan_manifest.sha256`) and again in the start record.

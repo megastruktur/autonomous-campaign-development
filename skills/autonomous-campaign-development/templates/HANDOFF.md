@@ -13,11 +13,14 @@
 ## Goal and scope (summary)
 
 {{two to five sentences: what this campaign delivers and the approved scope. Key
-decisions and clarifications: link the PLAN section, do not re-paste the transcript.}}
+  design, key decisions and clarifications, and converged INTENT/RESEARCH/CRITIQUE links;
+  do not re-paste the transcript.}}
 
 ## Artifacts (repo-relative links)
 
 - Plan: `plans/{{campaign_name}}/{{prefix}}_PLAN.md`
+- Converged design: `{{prefix}}_INTENT.md`, `{{prefix}}_RESEARCH.md`,
+  `{{prefix}}_CRITIQUE.md` (final verdict `CONVERGED`, exact hashes recorded in PLAN/STATE)
 - Tasks: {{list every plans/{{campaign_name}}/{{prefix}}_{{task_name}}.md}}
 - State: `plans/{{campaign_name}}/{{prefix}}_STATE.json` (lifecycle:
   `awaiting_fresh_session_start`)
@@ -92,6 +95,9 @@ never embedded here (the manifest hashes this file; no recursive self-hash):
   "created_at": "{{iso8601}}",
   "algorithm": "sha256",
   "files": {
+    "plans/{{campaign_name}}/{{prefix}}_INTENT.md": "{{sha256}}",
+    "plans/{{campaign_name}}/{{prefix}}_RESEARCH.md": "{{sha256}}",
+    "plans/{{campaign_name}}/{{prefix}}_CRITIQUE.md": "{{sha256}}",
     "plans/{{campaign_name}}/{{prefix}}_PLAN.md": "{{sha256}}",
     "plans/{{campaign_name}}/{{prefix}}_{{task_name}}.md": "{{sha256}}",
     "plans/{{campaign_name}}/{{prefix}}_HANDOFF.md": "{{sha256}}"
@@ -99,7 +105,8 @@ never embedded here (the manifest hashes this file; no recursive self-hash):
 }
 ```
 
-Include every task file and every standalone shared-contract file under `files`. Never
+Include every task file, all three converged design artifacts (INTENT, RESEARCH, CRITIQUE),
+and every standalone shared-contract file under `files`. Never
 include STATE, TODO, EVENTS, evidence, or the manifest itself - those are mutable or
 self-referential. The manifest is immutable once written; any frozen-file change after
 approval invalidates consent until the user re-approves.

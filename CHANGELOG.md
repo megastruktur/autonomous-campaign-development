@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.4.0 — 2026-10-31
+
+Focus: evidence-based planning. Planning now has four mandatory phases with an auditable
+convergence gate before any DAG or task decomposition.
+
+### Added
+
+- Mandatory bounded, read-only repository discovery during intent capture: inspect actual
+  instructions, dependencies, relevant interfaces/patterns, and runtime/test entry points.
+- Mandatory web research for every campaign, scaled to novelty/risk, with retrieved sources,
+  citations, architecture option comparison, and decision traceability. Failed web access
+  pauses planning rather than silently substituting model knowledge.
+- Independent critique -> revision -> fresh full critique loop across intent fidelity,
+  architecture/research evidence, Security, UX, and execution readiness. `CONVERGED` must
+  bind exact current INTENT/RESEARCH hashes; all findings require resolution/disposition.
+  Architecture never silently overrides explicit user intent.
+- New planning reference and INTENT, RESEARCH, CRITIQUE, and PLANNING_STATE templates;
+  campaign STATE records phase/convergence and the manifest freezes all design evidence.
+- Validation tabletop scenarios for premature DAG creation, unavailable research, intent
+  conflicts, Security/UX findings, stale critique hashes, and proportionate research depth.
+
+### Changed
+
+- DAG and task decomposition now happen only after design convergence; tasks trace back to
+  intent, architecture decisions, Security/UX requirements, and shared contracts.
+- Existing one-WHAT-approval and distinct fresh-session START boundaries are unchanged.
+
 ## 1.3.0 — 2026-10-04
 
 Focus: campaign worktree topology. Worktrees are created from branches end to end so a
