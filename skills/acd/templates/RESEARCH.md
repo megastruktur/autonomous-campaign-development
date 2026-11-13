@@ -22,6 +22,17 @@ Research questions: {{questions}}
 
 Prefer primary/current sources. Search-result snippets are not sufficient evidence.
 
+## Open-source library evaluation (whole and partial coverage)
+
+| Capability slice (whole/part) | Candidate package & repo | License | Popularity signals | Maintenance / deprecation status (live-verified) | Fit, security & footprint | Disposition |
+|---|---|---|---|---|---|---|
+| {{slice}} | {{package_and_repo}} | {{license}} | {{popularity}} | {{registry_and_repo_status_live_verified}} | {{fit_cves_footprint}} | {{reuse_or_justified_custom}} |
+
+Verify BOTH the live package registry metadata and the upstream repository (not archived,
+not deprecated/yanked, no successor notice). Default to reusing a qualifying library over
+custom code; record an explicit evidence-backed justification whenever custom
+implementation is chosen or a `stdlib-only` / zero-dependency policy applies.
+
 ## Patterns and options compared
 
 | Pattern / option | Evidence | Benefits | Costs / risks | Repository fit |

@@ -25,7 +25,7 @@ event watcher — it runs only when a coordinator explicitly spawns it).
   plan and separately starts execution; destructive actions still stop for explicit
   permission.
 
-Version 1.5.0 · MIT License.
+Version 1.6.0 · MIT License.
 
 ## Requirements
 
@@ -148,13 +148,22 @@ How you update depends on how the skill was originally installed — check befor
 The skill is a coordinator contract for one development campaign:
 
 - **Four-phase planning gate (v1.4.0)**: (1) capture intent, brainstorm functionality, and
-  perform MANDATORY bounded read-only repository discovery; (2) perform MANDATORY web
-  research scaled to the feature and design an architecture from cited evidence plus actual
-  repository patterns; (3) commission an independent critique covering intent fidelity,
-  architecture, Security, UX, and execution readiness, then revise and repeat until a fresh
-  `CONVERGED` verdict binds the exact current design hashes; (4) only then create the DAG
-  and task files. Explicit user intent outranks architectural preference. Durable
-  `INTENT.md`, `RESEARCH.md`, and `CRITIQUE.md` artifacts are frozen into the manifest.
+  perform MANDATORY bounded read-only repository discovery (including manifest/lockfile
+  dependency, license, and footprint policies plus already-installed reusable libraries);
+  (2) perform MANDATORY web research scaled to the feature — including a mandatory
+  **live-verified open-source library evaluation** of whole and partial functionality
+  (search installed dependencies + standard library → whole-functionality libraries →
+  partial/sub-problem libraries; OSI/license-compatible, popular and battle-tested,
+  active/not deprecated, CVE/footprint fit; reuse-first anti-NIH with an
+  anti-micro-package counterweight) — and design an architecture from cited evidence plus
+  actual repository patterns; (3) commission an independent critique covering intent
+  fidelity, architecture, Security, UX, and execution readiness, then revise and repeat
+  until a fresh `CONVERGED` verdict binds the exact current design hashes; (4) only then
+  create the DAG and task files. Approved dependencies are pinned in shared contracts
+  with manifest/lockfile updates serialized to a single owner, and newly adopted
+  third-party dependencies are presented inside the single WHAT approval gate. Explicit
+  user intent outranks architectural preference. Durable `INTENT.md`, `RESEARCH.md`, and
+  `CRITIQUE.md` artifacts are frozen into the manifest.
 - **Planning/execution boundary (v1.1.0)**: one explicit plan approval authorizes WHAT
   may happen — it never starts agents. The planning session writes a durable HANDOFF
   plus a SHA-256 manifest of the frozen plan files and stops; execution begins only in a
@@ -265,7 +274,7 @@ skills/acd/
 │   └── validation-tabletop.md               # static checks and tabletop walkthroughs
 ├── templates/
 │   ├── INTENT.md                            # intent + mandatory repository discovery
-│   ├── RESEARCH.md                          # cited web research + architecture/Security/UX
+│   ├── RESEARCH.md                          # cited web research + OSS library evaluation + architecture/Security/UX
 │   ├── CRITIQUE.md                          # independent five-lens revision/convergence history
 │   ├── PLANNING_STATE.json                  # mutable planning-phase and hash gate
 │   ├── PLAN.md                              # campaign plan template

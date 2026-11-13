@@ -26,11 +26,11 @@
 
 ### Lens 2 - Architecture and research evidence
 
-{{findings_about_pattern_fit_sources_repository_contracts_and_feasibility_or_no_findings}}
+{{findings_about_pattern_fit_sources_repository_contracts_feasibility_oss_build_vs_reuse_coverage_live_license_popularity_non_deprecation_evidence_and_nih_justification_or_no_findings}}
 
 ### Lens 3 - Security
 
-{{findings_about_threats_trust_boundaries_abuse_cases_controls_and_verification_or_no_findings}}
+{{findings_about_threats_trust_boundaries_abuse_cases_controls_third_party_license_cve_supply_chain_risk_and_verification_or_no_findings}}
 
 ### Lens 4 - UX
 
@@ -38,7 +38,7 @@
 
 ### Lens 5 - Execution readiness
 
-{{findings_about_acceptance_runtime_scenarios_task_boundaries_and_dependencies_or_no_findings}}
+{{findings_about_acceptance_runtime_scenarios_task_boundaries_dependencies_and_pinned_package_versions_lockfile_ownership_or_no_findings}}
 
 ### Findings and dispositions
 

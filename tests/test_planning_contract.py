@@ -16,7 +16,7 @@ SKILL_ROOT = ROOT / "skills" / "acd"
 TEMPLATES = SKILL_ROOT / "templates"
 
 SKILL_NAME = "acd"
-SKILL_VERSION = "1.5.0"
+SKILL_VERSION = "1.6.0"
 OLD_SKILL_NAME = "-".join(["autonomous", "campaign", "development"])  # checked absent
 REPO_SLUG = f"megastruktur/{OLD_SKILL_NAME}"  # preserved by design
 
@@ -154,8 +154,85 @@ class PlanningContractTests(unittest.TestCase):
 
     def test_new_tabletop_scenarios_are_well_formed(self):
         text = (SKILL_ROOT / "references" / "validation-tabletop.md").read_text()
-        rows = re.findall(r"^\| (4[2-7]) \|.*\|$", text, re.MULTILINE)
-        self.assertEqual(rows, [str(n) for n in range(42, 48)])
+        rows = re.findall(r"^\| (4[2-9]|50) \|.*\|$", text, re.MULTILINE)
+        self.assertEqual(rows, [str(n) for n in range(42, 51)])
+
+    def test_research_template_mandates_oss_library_evaluation(self):
+        research = (TEMPLATES / "RESEARCH.md").read_text(encoding="utf-8")
+        section = "## Open-source library evaluation (whole and partial coverage)"
+        self.assertIn(section, research)
+        self.assertLess(
+            research.index("## Sources actually consulted"), research.index(section)
+        )
+        self.assertLess(
+            research.index(section), research.index("## Patterns and options compared")
+        )
+        for column in (
+            "Capability slice (whole/part)",
+            "Candidate package & repo",
+            "License",
+            "Popularity signals",
+            "Maintenance / deprecation status (live-verified)",
+            "Fit, security & footprint",
+            "Disposition",
+        ):
+            self.assertIn(column, research)
+
+    def test_state_templates_initialize_oss_evaluation_gate_false(self):
+        self.assertFalse(
+            self.planning_state["research"]["oss_library_evaluation_completed"]
+        )
+        self.assertFalse(
+            self.state["planning"]["research"]["oss_library_evaluation_completed"]
+        )
+
+    def test_oss_reuse_evaluation_is_enforced_in_skill_and_reference(self):
+        for text in (self.skill, self.reference):
+            flat = " ".join(text.split())
+            self.assertIn("open-source, popular, and non-deprecated libraries", flat)
+            self.assertIn("whole and partial coverage", flat)
+            self.assertIn("package registry", flat)
+            self.assertIn("upstream", flat)
+            self.assertIn("NOT deprecated", flat)
+            self.assertIn("not archived", flat)
+            self.assertIn("anti-NIH", flat)
+            self.assertIn("oss_library_evaluation_completed", flat)
+            self.assertIn("lockfile", flat)
+            self.assertIn("serializ", flat.lower())
+
+    def test_oss_dependency_hooks_in_critique_plan_and_task_templates(self):
+        critique = (TEMPLATES / "CRITIQUE.md").read_text(encoding="utf-8")
+        self.assertIn("oss_build_vs_reuse", critique)
+        self.assertIn("supply_chain", critique)
+        self.assertIn("lockfile", critique)
+        plan = (TEMPLATES / "PLAN.md").read_text(encoding="utf-8")
+        self.assertIn(
+            "- Approved dependencies: "
+            "{{packages_versions_licenses_and_lockfile_owner_or_none_stdlib_only}}",
+            plan,
+        )
+        self.assertIn("must not install unapproved packages", plan)
+        task = (TEMPLATES / "TASK.md").read_text(encoding="utf-8")
+        self.assertIn(
+            "- Approved dependencies: "
+            "{{exact_packages_and_versions_or_none_no_unapproved_installs}}",
+            task,
+        )
+
+    def test_skill_payload_is_ascii_and_json_templates_parse(self):
+        offenders = []
+        for path in sorted(p for p in SKILL_ROOT.rglob("*") if p.is_file()):
+            if path.suffix not in {".md", ".json"}:
+                continue
+            text = path.read_text(encoding="utf-8")
+            if not text.isascii():
+                offenders.append(f"non-ascii: {path.relative_to(ROOT)}")
+            if path.suffix == ".json":
+                try:
+                    json.loads(text)
+                except json.JSONDecodeError:
+                    offenders.append(f"invalid json: {path.relative_to(ROOT)}")
+        self.assertEqual(offenders, [])
 
 
 if __name__ == "__main__":

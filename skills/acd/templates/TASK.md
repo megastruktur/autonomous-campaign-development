@@ -30,6 +30,7 @@ report; do not fix it.
 
 - API: {{contract_reference}}
 - Schema/data: {{contract_reference}}
+- Approved dependencies: {{exact_packages_and_versions_or_none_no_unapproved_installs}}
 - Other: {{contract_reference}}
 
 ## Design traceability

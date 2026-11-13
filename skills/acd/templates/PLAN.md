@@ -80,8 +80,10 @@ post-merge smoke tested.
 - API contracts: {{endpoints/signatures/error shapes owned here}}
 - Schema/data contracts: {{migrations, ownership, ordering}}
 - Resource ownership: {{files, lockfiles, build output, ports, fixtures, external side effects}}
+- Approved dependencies: {{packages_versions_licenses_and_lockfile_owner_or_none_stdlib_only}}
 
 Sibling tasks consume these contracts as-is; they never redesign them independently.
+Task workers must not install unapproved packages.
 
 ## Campaign acceptance criteria
 

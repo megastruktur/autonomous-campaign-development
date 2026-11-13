@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.6.0 — 2026-11-13
+
+Focus: reuse-first planning. Planning now mandates a live-verified open-source library
+evaluation of whole and partial functionality before any custom implementation.
+
+### Added
+
+- Mandatory open-source library evaluation in phase 2: search existing repository
+  dependencies and the standard library first, then whole-functionality and
+  partial/sub-problem libraries. Every candidate is verified through live primary sources
+  - package registry metadata AND the upstream source repository - for OSI/license
+  compatibility, popularity signals, active/not-deprecated/unarchived status, and
+  CVE/footprint fit. `RESEARCH.md` gains the evaluation table; the planning gate records
+  `research.oss_library_evaluation_completed`.
+- Reuse-first anti-NIH default with the anti-micro-package counterweight (no external
+  packages for trivial ~10-20 line standard-library operations), plus a whole-coverage
+  disclosure: when one library covers ~80-100% of the capability and collapses the build
+  into thin integration, that option is surfaced to the user instead of padding custom
+  tasks. Custom implementation requires an evidence-backed justification in RESEARCH.
+- Approved dependencies (package, version constraint, license, lockfile owner) are pinned
+  in PLAN/TASK shared contracts; manifest + lockfile updates are serialized through a
+  dedicated prerequisite or exclusive-owner task so parallel worktrees never collide.
+  Newly adopted third-party dependencies are presented inside the single WHAT approval
+  gate (earlier pauses only for license conflicts, new host/system binary prerequisites,
+  or whole-campaign collapse).
+- Critic lenses now audit OSS build-vs-reuse coverage, live non-deprecation/popularity/
+  license evidence, NIH justification, third-party supply-chain/CVE posture, and
+  manifest/lockfile ownership readiness. Tabletop scenarios 48-50 cover NIH
+  reimplementation, model-memory/deprecated package selection, and
+  whole-coverage/`stdlib-only` dispositions.
+
+### Changed
+
+- Phase 1 repository discovery now records dependency/license/footprint policies
+  (including `stdlib-only` mandates) and already-installed reusable libraries, and seeds
+  candidate capability slices for the phase 2 evaluation.
+- SKILL.md version bumped to 1.6.0; planning STATE templates initialize the new gate
+  flag (schema_version unchanged).
+
 ## 1.5.0 — 2026-10-31
 
 Focus: skill identity. The skill directory and invocation name are now `acd`; the

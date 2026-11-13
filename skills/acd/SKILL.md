@@ -1,7 +1,7 @@
 ---
 name: acd
 description: Orchestrate multi-agent dev campaigns in Orca worktrees
-version: 1.5.0
+version: 1.6.0
 metadata:
   hermes:
     category: software-development
@@ -52,24 +52,62 @@ Capture user intent, clarify consequential ambiguity, and brainstorm functionali
 coordinator may reason and recommend scope. Perform MANDATORY bounded, read-only repository
 discovery of relevant instructions, dependencies, interfaces, patterns, and test/runtime
 entry points - trace symbols rather than guessing, but do not deeply implement or perform an
-exhaustive review. Record outcomes and evidence in `{prefix}_INTENT.md`. Do not create a DAG.
+exhaustive review. Inspect repository manifests and lockfiles not only to list current
+dependencies but also to identify (a) already-installed libraries or runtime standard-library
+modules that can cover part of the requested work, and (b) dependency/license/footprint
+policies constraining library adoption (for example `stdlib-only` or zero-dependency
+mandates, license restrictions, bundle/binary constraints, package manager + lockfile).
+Record candidate functional slices - both whole-feature and sub-problem building blocks -
+to evaluate for open-source library coverage in Phase 2. Record outcomes and evidence in
+`{prefix}_INTENT.md`. Do not create a DAG.
 Full contract: [references/planning-and-design.md](references/planning-and-design.md).
 
 ### 2. Web research and architecture
 
 Perform MANDATORY web research for every campaign, scaled to feature size, novelty, and risk.
 Retrieve and cite current primary/authoritative sources; never substitute model memory for
-failed web access. Produce `{prefix}_RESEARCH.md`: compare architecture patterns, choose one
-using repository evidence and research, and map decisions back to intent. Include substantive,
-proportionate Security and UX analysis, especially for big, sensitive, or user-facing features.
-Settle shared API/schema/resource direction centrally. No task DAG yet.
+failed web access. Search for open-source, popular, and non-deprecated libraries covering the
+WHOLE requested functionality or specific parts/sub-problems (whole and partial coverage)
+BEFORE designing custom implementations; search order: (1) existing repository dependencies
+and the language standard library, (2) whole-functionality open-source libraries/plugins/
+tools, (3) partial/sub-problem open-source libraries. Verify every candidate through LIVE
+primary sources - both the package registry page/metadata AND the upstream source repository,
+never model memory - and accept only libraries that are:
+
+- Open-source and license-compatible: a verified OSI-approved license compatible with the
+  repository license/policy - no proprietary/SSPL/BSL or conflicting copyleft unless the
+  user explicitly approves it.
+- Popular and battle-tested: live adoption evidence (downloads/dependents,
+  stars/contributors, or ecosystem-standard standing proportionate to the niche).
+- Actively maintained and NOT deprecated: upstream repository not archived, package not
+  marked deprecated/yanked in registry metadata or README/issues, no upstream notice
+  directing users to a successor, and compatibility with the repository's current
+  language/runtime/framework versions - stable feature-complete maturity is not abandonment.
+- Security and footprint fit: no unpatched critical advisories/CVEs, proportionate
+  transitive/native build weight, and compliance with explicit `stdlib-only` or bundle
+  constraints.
+
+Reuse-first anti-NIH default balanced against bloat: adopt qualifying libraries by default
+for non-trivial functionality; writing custom code where a qualifying library exists
+requires explicit evidence-backed justification in `{prefix}_RESEARCH.md`. Conversely, do
+not add external micro-packages for trivial ~10-20 line standard-library operations. If a
+library covers ~80-100% of the requested capability and collapses a multi-task build into
+thin integration, surface that whole-coverage finding to the user instead of padding custom
+tasks to justify a multi-agent DAG. Produce `{prefix}_RESEARCH.md`: compare architecture
+patterns, choose one using repository evidence and research, and map decisions back to
+intent. Include substantive, proportionate Security and UX analysis, especially for big,
+sensitive, or user-facing features. Settle shared API/schema/resource direction centrally.
+Set `research.oss_library_evaluation_completed: true` in `{prefix}_PLANNING_STATE.json` and
+`{prefix}_STATE.json` only after the live-verified OSS evaluation is written into
+`{prefix}_RESEARCH.md`. No task DAG yet.
 
 ### 3. Independent critique and revision loop
 
 Commission an independent read-only critic and preserve rounds in `{prefix}_CRITIQUE.md`.
-Critique the exact hashed INTENT + RESEARCH through FIVE lenses: intent fidelity,
-architecture/research evidence, Security, UX, and execution readiness. Revise the design,
-answer every finding, and repeat a fresh full critique. Loop until `CONVERGED` with no
+architecture/research evidence, Security, UX, and execution readiness. The critic audits OSS
+build-vs-reuse coverage: live non-deprecation/popularity/license evidence, anti-NIH
+justifications, supply-chain/CVE posture, and dependency/lockfile execution readiness. Revise
+the design, answer every finding, and repeat a fresh full critique. Loop until `CONVERGED` with no
 unresolved blocking findings, bound to the current artifact hashes. If architecture
 contradicts explicit user intent, user intent wins: revise the architecture or surface a
 genuine infeasibility/trade-off; never silently change requirements. Material intent changes
@@ -98,7 +136,11 @@ its acceptance/runtime scenarios; decomposition may not silently expand or contr
 
 Plan the DAG with explicit dependency edges and resource exclusions (files, APIs,
 migration ordering, schema ownership, lockfiles, build output, ports, fixture data,
-databases, external side effects). Possible parallel groups are explanatory views, never
+databases, external side effects). Pin exact approved package names, version constraints,
+and purpose in shared contracts; forbid coding agents from ad-hoc unapproved package
+installs, and serialize manifest + lockfile updates through a dedicated prerequisite
+foundation task or exclusive resource ownership so parallel worktrees never collide on
+lockfiles. Possible parallel groups are explanatory views, never
 fixed-wave barriers. Size tasks for the actually chosen worker model, not a hard-coded model.
 
 ### 5. Model questionnaire
@@ -120,7 +162,10 @@ input. Never silently pick an unapproved model, never print credentials. Mechani
 
 Present the plan plus resolved models and the converged design; obtain ONE explicit
 approval of WHAT the campaign
-may do. It authorizes scoped development, tests, reviews, task squash merges, the
+may do. Newly adopted third-party dependencies (package, version constraint, license) are
+presented clearly inside this single WHAT gate - pausing earlier only for license conflicts,
+new host/system binary prerequisites, or the Phase 2 whole-campaign collapse disclosure. It
+authorizes scoped development, tests, reviews, task squash merges, the
 campaign completion merge, and safe cleanup - record the final-merge strategy (default
 `--no-ff`) in the approval. Approval is NOT START and adds no per-task human gates: the
 planning session then writes the durable HANDOFF plus its hash manifest
@@ -313,6 +358,15 @@ separately approved; merge is not user delivery. Endgame and cleanup contract:
   existence or self-critique alone never opens the gate.
 - Treating web snippets or model memory as research, inventing sources, or continuing after
   web-access failure without recording a blocker and pausing.
+- Writing a custom parser/scheduler/UI component (NIH reimplementation) without first
+  searching for and evaluating mature open-source libraries; reuse-first is the default and
+  custom code needs evidence-backed justification in RESEARCH.
+- Selecting a package from model memory, or adopting an archived/deprecated/yanked/
+  superseded or license-incompatible library, without live registry + upstream repository
+  verification.
+- Parallel tasks independently mutating manifests/lockfiles or installing unapproved
+  packages; dependency adoption is pinned in shared contracts and lockfile updates are
+  serialized through one prerequisite/exclusive-owner task.
 - Letting an architectural pattern silently override explicit user intent; revise the design
   or surface a real infeasibility/trade-off instead.
 - Declaring convergence after fixing only a critic's named example: every revision gets a
@@ -404,7 +458,9 @@ separately approved; merge is not user delivery. Endgame and cleanup contract:
 
 - Planning gate: INTENT records actual bounded read-only repository discovery; RESEARCH
   contains actually retrieved/cited web evidence plus architecture, Security, and UX
-  analysis; an independent critic's final `CONVERGED` verdict binds the current exact
+  analysis; `research.oss_library_evaluation_completed` is true in PLANNING_STATE and STATE
+  with the live-verified OSS build-vs-reuse coverage (whole and partial) recorded in
+  RESEARCH; an independent critic's final `CONVERGED` verdict binds the current exact
   INTENT/RESEARCH hashes and all findings have dispositions. DAG/task files do not predate
   this gate, and each task preserves design traceability. The manifest freezes INTENT,
   RESEARCH, CRITIQUE, PLAN, tasks/contracts, and HANDOFF.

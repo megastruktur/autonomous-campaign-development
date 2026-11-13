@@ -34,8 +34,10 @@ smoke before release - prose alone enforces nothing.
 
 Static checks additionally require the four gated phases, mandatory repository/web evidence,
 the five critique lenses (including Security and UX), and hash-bound convergence before DAG
-creation. INTENT, RESEARCH, and CRITIQUE belong in the frozen manifest; the mutable planning
-phase state does not. Tabletop scenarios 42-47 exercise these requirements.
+creation, plus the mandatory live-verified open-source library evaluation covering whole
+and partial functionality, anti-NIH critique enforcement, and lockfile ownership for any
+adopted dependency. INTENT, RESEARCH, and CRITIQUE belong in the frozen manifest; the
+mutable planning phase state does not. Tabletop scenarios 42-50 exercise these requirements.
 
 ## Tabletop scenarios
 
@@ -92,6 +94,9 @@ the text instructs at each step. Expected outcomes below are the pass criteria.
 | 45 | Critique finds a major Security or UX omission; revision fixes only that section | Coordinator responds to finding, updates hashes, and obtains a FRESH full five-lens independent critique; previous verdict is stale |
 | 46 | Critique says CONVERGED but INTENT or RESEARCH changed afterward | Hash mismatch invalidates convergence; no DAG/task files until a fresh critique binds current artifacts |
 | 47 | Small conventional feature vs big user-facing/security-sensitive feature | Both require repository discovery and web research; breadth scales, but big features receive substantive scenario-based Security and UX analysis rather than N/A |
+| 48 | Coordinator designs a custom parser/scheduler/UI component without searching for or evaluating mature open-source libraries | Critic flags a major Lens 2 finding (`REVISE`); no convergence or DAG until a live-verified OSS evaluation and a reuse-or-justified-custom disposition land in RESEARCH |
+| 49 | Coordinator selects a package from model memory, or picks an archived/deprecated/license-incompatible library | Critic flags a critical/major Lens 2/3 finding (`REVISE`); coordinator must verify live registry + upstream repository status and switch to a maintained compatible library or a justified alternative |
+| 50 | Live OSS evaluation finds (a) one library covers ~90% of the feature, or (b) the repository enforces `stdlib-only`; when new packages ARE adopted, parallel tasks need them | (a) whole-coverage option surfaced to the user rather than padding custom tasks to justify a DAG; (b) `stdlib-only` constraint honored and recorded as the justification; adopted packages pinned in shared contracts with manifest/lockfile updates serialized in a prerequisite/exclusive-owner task |
 
 ## Recording results
 

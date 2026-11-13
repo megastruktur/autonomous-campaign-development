@@ -24,6 +24,8 @@ requires ALL of the following, recorded in STATE and the planning artifacts:
 - relevant existing repository interfaces and constraints were inspected read-only;
 - web research was actually performed and cited, with an architecture decision traceable to
   that research and repository evidence;
+- `research.oss_library_evaluation_completed == true`: the live-verified open-source library
+  evaluation (whole and partial coverage) is recorded in RESEARCH with dispositions;
 - an independent critic examined the current design and every material finding is resolved;
 - the final critic verdict is `CONVERGED`, bound to exact hashes of INTENT and RESEARCH;
 - no unresolved contradiction with the user's intent remains.
@@ -44,10 +46,17 @@ proposals rather than silently turning suggestions into requirements.
 Repository discovery is MANDATORY and read-only, even for a feature that appears greenfield.
 Keep it bounded and relevant: inspect repository instructions, manifests/dependencies,
 architecture documentation, the modules and public interfaces likely to participate, existing
-patterns, test/runtime entry points, and integration/seam constraints. Trace important symbols
+patterns, test/runtime entry points, and integration/seam constraints. Read manifests and
+lockfiles not only to list current dependencies but also to identify (a) already-installed
+libraries or runtime standard-library modules that can cover part of the requested work, and
+(b) the dependency/license/footprint policies constraining adoption - `stdlib-only` or
+zero-dependency mandates, license restrictions, bundle/binary constraints, package manager +
+lockfile. Trace important symbols
 to definitions and consumers; do not guess APIs or assume a dependency exists. Do not perform
 a full code review, exhaustive history excavation, implementation, or edits. Record exact
-paths/symbols inspected, relevant findings, and remaining unknowns.
+paths/symbols inspected, relevant findings, and remaining unknowns. Also record candidate
+functional slices - whole-feature and sub-problem building blocks alike - to evaluate for
+open-source library coverage in phase 2.
 
 This evidence informs, but does not replace, user intent. Finish phase 1 with a proposed
 functional scope and acceptance outcomes; do not create task files or a DAG.
@@ -66,6 +75,48 @@ relevant source material.
 If web access or source retrieval fails, record the failed capability and PAUSE planning for
 user direction or restored access. Never silently substitute model memory, invent citations,
 or label an unresearched design researched.
+
+### Mandatory open-source library evaluation (whole and partial coverage)
+
+Before designing any custom implementation, search for open-source, popular, and
+non-deprecated libraries that cover the whole requested functionality or specific
+parts/sub-problems (whole and partial coverage). Search in order:
+
+1. Existing repository dependencies and the language standard library - reuse what is
+   already installed before adding anything.
+2. Whole-functionality open-source libraries, plugins, or tools.
+3. Partial/sub-problem open-source libraries covering individual capability slices.
+
+Verify every candidate through LIVE primary sources - both live package registry metadata
+and the upstream source repository, never model memory:
+
+- Open-source and license-compatible: an OSI-approved license compatible with the
+  repository license/policy; no proprietary/SSPL/BSL or conflicting copyleft unless the
+  user explicitly approves it.
+- Popular and battle-tested: live adoption evidence (downloads/dependents,
+  stars/contributors, or ecosystem-standard standing proportionate to the niche).
+- Actively maintained and NOT deprecated: upstream repository not archived, package not
+  deprecated/yanked in registry metadata or README/issues, no successor notice, and
+  compatibility with the repository's current language/runtime/framework versions -
+  distinguish stable feature-complete maturity from abandonment.
+- Security and footprint fit: no unpatched critical advisories/CVEs, proportionate
+  transitive/native build weight, and compliance with explicit `stdlib-only` or bundle
+  constraints.
+
+Reuse-first anti-NIH rule with the anti-micro-package counterweight: adopt a qualifying
+library by default for non-trivial functionality; custom reimplementation where a qualifying
+library exists requires explicit evidence-backed justification in RESEARCH. Conversely, do
+not add external micro-packages for trivial ~10-20 line standard-library operations. If one
+library covers ~80-100% of the requested capability and collapses a multi-task build into
+thin integration, surface that whole-coverage option to the user instead of padding custom
+tasks to justify a multi-agent DAG.
+
+Record the evaluation in RESEARCH under "Open-source library evaluation (whole and partial
+coverage)": capability slices, candidate package and repository, license, popularity
+signals, live-verified maintenance/deprecation status, fit/security/footprint, and the
+reuse-or-justified-custom disposition. Set `research.oss_library_evaluation_completed:
+true` in `{prefix}_PLANNING_STATE.json` and `{prefix}_STATE.json` only after this
+live-verified evaluation is written.
 
 Produce an architecture proposal grounded in BOTH repository evidence and research:
 
@@ -104,12 +155,20 @@ exact inputs. The critic must separately assess:
    outcomes; detect omissions, scope creep, and architectural preferences overriding intent.
 2. **Architecture and research evidence:** pattern fit, source quality/currency, repository fit,
    contracts, data/control flow, migration/compatibility, failure behavior, and feasibility.
+   Blocks (`critical`/`major`) when the open-source library evaluation is missing, relies on
+   model memory without live registry + upstream repository sources, selects a
+   deprecated/archived/superseded package, or proposes custom reimplementation (NIH)
+   without concrete evidence-backed justification.
 3. **Security:** threats, trust boundaries, abuse cases, data protection, access control,
-   secure defaults, and security verification proportionate to the feature.
+   secure defaults, and security verification proportionate to the feature - including
+   license compatibility, CVE/advisory status, and supply-chain/trust-boundary exposure of
+   adopted third-party packages.
 4. **UX:** end-to-end journeys, interaction states, accessibility, responsiveness, error
    prevention/recovery, and consistency with the product.
 5. **Execution readiness:** observable acceptance/runtime scenarios, likely task boundaries,
-   dependencies/resource contention, and whether enough is known to decompose safely.
+   dependencies/resource contention, and whether enough is known to decompose safely -
+   including exact package + version pinning in shared contracts and single-owner
+   manifest/lockfile task sequencing.
 
 Each finding gets an ID, severity (`critical`, `major`, `minor`), category, evidence/rationale,
 and required resolution. Critical/major findings block convergence. Minor findings must also
@@ -133,7 +192,11 @@ Only now create/fill `PLAN.md`, decompose tasks, and settle the final shared con
 the traceability chain: user intent -> research/repository evidence -> converged architecture
 -> task -> acceptance/runtime scenario. Each task references the relevant design decisions,
 security/UX requirements, and contracts. Size for the selected worker model; make dependency
-edges and exclusive resources explicit. Decomposition must not introduce functionality that
+edges and exclusive resources explicit. Pin approved dependencies (exact package, version
+constraint, purpose) in the shared contracts; workers never install unapproved packages, and
+manifest + lockfile updates live in a dedicated prerequisite task or a serialized
+exclusive-resource slot so concurrent child worktrees never fight over lockfiles.
+Decomposition must not introduce functionality that
 contradicts or exceeds approved intent without returning to the appropriate earlier phase.
 
 Then ask the model questionnaire, present the plan and resolved models, and capture the ONE

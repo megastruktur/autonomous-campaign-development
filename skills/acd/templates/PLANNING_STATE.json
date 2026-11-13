@@ -9,6 +9,7 @@
     "path": "{prefix}_RESEARCH.md",
     "sha256": null,
     "web_research_completed": false,
+    "oss_library_evaluation_completed": false,
     "sources": []
   },
   "critique": {

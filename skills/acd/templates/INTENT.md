@@ -39,7 +39,7 @@ unapproved suggestion into user-required scope.
 ## MANDATORY read-only repository discovery
 
 - Repository instructions inspected: {{paths}}
-- Manifests/dependencies inspected: {{paths_and_relevant_dependencies}}
+- Manifests/dependencies inspected (incl. dependency/license/`stdlib-only` policies, package manager/lockfiles, and already-installed reusable libraries): {{paths_and_findings}}
 - Architecture/docs inspected: {{paths}}
 - Relevant modules/public interfaces and traced symbols: {{paths_symbols_consumers}}
 - Existing implementation patterns: {{patterns_with_paths}}
@@ -57,3 +57,6 @@ research, source edits, agents, and worktrees are forbidden in this phase.
 ## Remaining unknowns and next research questions
 
 {{unknowns_or_none_and_questions_for_phase_2}}
+
+Capability slices (whole and partial) to evaluate for open-source library reuse in
+Phase 2: {{slices_or_none}}
