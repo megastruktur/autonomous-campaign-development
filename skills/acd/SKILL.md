@@ -1,7 +1,7 @@
 ---
 name: acd
 description: Orchestrate multi-agent dev campaigns in Orca worktrees
-version: 1.6.0
+version: 1.7.0
 metadata:
   hermes:
     category: software-development
@@ -38,13 +38,30 @@ verified wakeup mechanism - the bounded event watcher with completion notificati
   writes evidence.
 - **Runtime test executor**: exercises real-runtime scenarios per task; may be separate
   from the coding agent; its report never substitutes for independent review.
-- **Independent reviewer**: an inquisitor-style profile or agent when actually available,
-  otherwise a separately spawned read-only session - never the implementing session.
-  Returns an explicit complete PASS or FAIL verdict plus actionable findings; no edits,
+- **Independent reviewer**: two engines, selected by the OCR gate at planning start
+  (section 0): when OCR (`ocr` CLI) is installed and working, code review runs
+  EXCLUSIVELY through OCR and the coordinator derives the verdict from its JSON output;
+  otherwise an inquisitor-style profile or agent when actually available, else a
+  separately spawned read-only session - never the implementing session. Either engine
+  yields an explicit complete PASS or FAIL verdict plus actionable findings; no edits,
   commits, merges, pushes, or automatic fixes. Read-only is an enforced capability when
-  available and an explicit mandate otherwise.
+  available and an explicit mandate otherwise. Contract:
+  [references/ocr-review.md](references/ocr-review.md).
 
 ## Procedure
+
+### 0. Code-review engine gate (OCR, v1.7.0)
+
+At the very start of planning, detect OCR (`ocr` CLI, alibaba/open-code-review):
+resolve the binary (PATH plus the runtime's npm global bin dir when sandboxed PATHs
+hide it) and run `ocr version`. If installed and working (`ocr llm test` passes), ALL
+code review - per-task and final - runs EXCLUSIVELY through OCR: no inquisitor reviewer
+sessions for code, and no silent fallback on OCR failure (remediate or escalate to the
+user). If not installed, OFFER installation once at the start
+(`npm install -g @alibaba-group/open-code-review`); a declined offer records the standard
+session reviewer for this campaign. Record the decision (`review_engine`: `ocr` or
+`session`) in HANDOFF and STATE. The planning critic and runtime testing are unchanged.
+Full contract: [references/ocr-review.md](references/ocr-review.md).
 
 ### 1. Intent and mandatory repository discovery
 
@@ -155,7 +172,11 @@ unless the user changes them. Never hardcode specific vendor models into the pla
 (neither for wave execution nor for final review); a heavyweight final-review model is
 the user's explicit choice, not a requirement. With no fallback: same-model session
 repair is allowed; a failure requiring another provider or model pauses for user
-input. Never silently pick an unapproved model, never print credentials. Mechanics:
+input. Never silently pick an unapproved model, never print credentials. When the OCR
+engine is selected, the reviewer model (and the optional final-review model) is OCR's
+model: verify it is served by OCR's endpoint and supports native tool calling, pin it
+in OCR's provider config, and pass it explicitly on every run
+([references/ocr-review.md](references/ocr-review.md)). Mechanics:
 [references/hermes-orca-omp.md](references/hermes-orca-omp.md).
 
 ### 6. One approval gate (WHAT)
@@ -227,8 +248,13 @@ evidence shows progress. New tested or reviewed changes invalidate prior verdict
 every result to the exact commit/tree/build and scenario version. The coordinator
 commissions the independent review itself, with an unbiased packet (acceptance criteria,
 contracts, diff base/tip, runtime evidence, known findings) - author self-review is
-optional preparation, never a gate. Detailed contracts:
-[references/runtime-review-and-integration.md](references/runtime-review-and-integration.md).
+optional preparation, never a gate. With the OCR engine the review is one `ocr review`
+run per frozen candidate (commit mode, effort low, JSON output, budget-capped); the
+coordinator derives PASS/FAIL from the findings - severity critical/high/medium all
+block, low never blocks - and a partial/failed/skipped run is never a verdict. Detailed
+contracts:
+[references/runtime-review-and-integration.md](references/runtime-review-and-integration.md);
+OCR protocol: [references/ocr-review.md](references/ocr-review.md).
 
 ### 10. Concurrency
 
@@ -453,6 +479,19 @@ separately approved; merge is not user delivery. Endgame and cleanup contract:
   coordinators; treating a status file as a scheduler that survives reboot.
 - Releasing dependents on an executor done message instead of post-merge smoke.
 - Bare `orca` on the host is the wrong program - the host CLI is `orca-ide`.
+- With OCR installed, commissioning an inquisitor/session code review anyway, or
+  silently falling back to one when OCR fails - the recorded engine binds the campaign;
+  failures are remediated or escalated, never swapped.
+- Treating an OCR run as a verdict because rc=0: `partial`, `failed`, `failed(budget)`,
+  `skipped`, or zero reviewed files are not verdicts; `comments: []` is clean only when
+  files were actually reviewed. Dropping blocking findings because line positioning
+  failed (`start_line=end_line=0`) - locate them via `existing_code` instead.
+- Letting `low`/style findings block, or letting `medium` findings pass: the blocking
+  set is critical/high/medium. Using `ocr scan` for campaign review (its whole-file
+  token model is far heavier) or delegation mode (review must run on OCR's own model).
+- Storing OCR API keys in config or shell arguments instead of `api_key_cmd` against
+  the secret store, or verifying the key helper under a sandboxed `$HOME` that cannot
+  see the real token file.
 
 ## Verification
 
@@ -484,6 +523,12 @@ separately approved; merge is not user delivery. Endgame and cleanup contract:
   resumes of a started campaign carry the original approval without re-gating.
 - Progress claims distinguish last observed, last successful assistant, last completed
   tool (errors separate), and last semantic progress; unknown is never reported healthy.
+- Review engine: the OCR gate ran at planning start; `review_engine` is recorded in
+  HANDOFF/STATE; when `ocr`, every per-task and final review has an OCR output JSON with
+  a valid run status, coverage of the acceptance surface, a coordinator-derived verdict
+  bound to the exact SHA, and no inquisitor code-review session was commissioned;
+  blocking severities are critical/high/medium. When `session`, the standard independent
+  reviewer contract applies unchanged.
 - Before relying on a modified copy of this skill, run the static checks and tabletop
   walkthroughs in [references/validation-tabletop.md](references/validation-tabletop.md).
 - Dispatch mechanics and command shapes: [references/hermes-orca-omp.md](references/hermes-orca-omp.md);

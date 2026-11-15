@@ -60,6 +60,12 @@ model of every agent; never silently substitute an unapproved model. The optiona
 final-review row pins a heavyweight model for exact-head final reviews; it is the
 user's choice, never a hard-coded requirement.
 
+Code-review engine (OCR gate at planning start): {{ocr_or_session}}. When `ocr`, the
+reviewer/final-review models above are OCR's models (pinned in OCR's provider config,
+tool-call-verified, passed explicitly per run); code review runs exclusively through
+OCR with no inquisitor sessions and no silent fallback
+([../references/ocr-review.md](../references/ocr-review.md)).
+
 ## Task DAG
 
 | Task | Depends on | Exclusive resources | Worktree (display) |

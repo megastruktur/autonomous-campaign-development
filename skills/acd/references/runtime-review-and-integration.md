@@ -35,20 +35,35 @@ The coordinator MUST commission its own independent review for every frozen cand
 even if the author ran a self-review or spawned a reviewer subagent itself. Self-review
 is optional preparation, never a completion gate substitute.
 
+**Engine selection (v1.7.0):** when the planning-start OCR gate recorded
+`review_engine: ocr` (OCR installed and working), the independent review is performed
+EXCLUSIVELY by OCR (`ocr review`) and the coordinator derives the verdict from its JSON
+output per [ocr-review.md](ocr-review.md) - no inquisitor reviewer session is
+commissioned for code, and OCR failures are remediated or escalated, never silently
+swapped for another engine. The packet, SHA-binding, and verdict discipline below still
+bind; OCR satisfies independence by construction (a separate engine on its own pinned
+model, never the authoring session). With `review_engine: session`, the session-reviewer
+contract below applies unchanged.
+
 Review packet (assembled by the coordinator, unbiased): task acceptance criteria, source
 contracts, exact diff base/tip, runtime evidence, and known findings - the raw material,
 never the author's reassuring summary, and never a "already PASS, please confirm"
 framing. The reviewer independently inspects every acceptance point.
 
-Reviewer rules:
+Reviewer rules (session engine; under the OCR engine these bind the OCR run and the
+coordinator's verdict derivation per [ocr-review.md](ocr-review.md)):
 
 - Independent: an inquisitor-style profile/agent when actually available, else a
   separately spawned read-only session; never the implementing session, and never a
-  session that authored the change under review.
+  session that authored the change under review. Under the OCR engine, independence is
+  the separate OCR process on its own pinned review model - no reviewer session at all.
 - Verdict: an explicit, complete `PASS` or `FAIL` plus actionable findings classified as
   acceptance / API / correctness / security. Shell rc=0, a terminated review process, or
   an empty response is NOT a verdict - re-commission until a complete verdict for the
-  expected snapshot exists.
+  expected snapshot exists. Under the OCR engine the verdict is coordinator-derived
+  from the OCR JSON: run status must be complete/success with reviewed files and full
+  acceptance-surface coverage; severity critical/high/medium block (FAIL), low never
+  blocks; partial/failed/budget-stopped/skipped runs are not verdicts.
 - Incremental verdict discipline: after minimal intake of the frozen snapshot, the
   reviewer's FIRST MUTATING tool call writes a compact verdict skeleton OUTSIDE the
   frozen source tree (in its evidence slot): status `IN_PROGRESS`, the candidate
@@ -58,7 +73,9 @@ Reviewer rules:
   requires a substantive completed criterion with evidence. A partial document, shell
   rc=0, or attempt-budget expiry is never PASS. Keep the final verdict short with links
   to evidence - no gigantic single-tool writes. Writing verdict/evidence files is
-  allowed while the code and source remain read-only.
+  allowed while the code and source remain read-only. Under the OCR engine the analog
+  is the run's session JSONL plus the output JSON: transport activity is not progress,
+  and only the completed run with a derived verdict counts.
 - No edits, commits, merges, pushes, or automatic fixes - not even a temporary edit of
   the reviewed tree. The reviewer may PROPOSE source-mutating probes (negative controls,
   mutation-sensitive checks); the EXECUTOR runs them in a disposable isolated copy,
@@ -122,7 +139,10 @@ evidence pointers.
 
 1. Every task TODO done; every required runtime scenario exercised.
 2. Full campaign acceptance plus seams runtime test at the EXACT campaign tip, then
-   independent final review at that same tip.
+   independent final review at that same tip. Under the OCR engine this is one
+   `ocr review --from <target-branch> --to <campaign-tip>` run (effort medium,
+   JSON output, budget-capped) with the coordinator-derived verdict per
+   [ocr-review.md](ocr-review.md#4-final-review).
 3. If the original target moved since the start: integrate the latest target into the
    campaign through the same fix/test/review rules and re-run final runtime verification.
    Never clobber the target or assume old acceptance still applies.

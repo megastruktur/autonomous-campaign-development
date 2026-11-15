@@ -37,6 +37,11 @@ session and starting a new one with an approved model. Never invent `--fallback-
    reconcile - never let an unapproved model run silently.
 5. `--models a,b` is cycling across listed models; do not use it to express fallback.
    Fallback happens only through the remediation ladder with an approved ID.
+6. OCR engine (v1.7.0): the reviewer/final-review answers are OCR's models. Verify the
+   resolved ID against OCR's endpoint catalog and tool-call support (`ocr llm test`),
+   pin it in OCR's provider config, and pass `--provider/--model` explicitly per run;
+   verify the actual model from the run's session record, not just the command line.
+   See [ocr-review.md](ocr-review.md).
 
 ## Worktree topology commands
 
@@ -121,6 +126,12 @@ orca-ide worktree ps --json
 
 ## Reviewer dispatch
 
+- Engine gate first (v1.7.0): when the planning-start OCR gate recorded
+  `review_engine: ocr`, code review is dispatched as OCR CLI runs, NOT reviewer
+  sessions - one `ocr review` per frozen candidate, supervised as a background process
+  with completion notification, verdict derived by the coordinator from the output JSON.
+  Full protocol: [ocr-review.md](ocr-review.md). The session-reviewer mechanics below
+  apply only when `review_engine: session`.
 - Prefer a genuinely independent reviewer mechanism: an inquisitor-style profile or
   read-only subagent if the runtime actually offers one. Availability of a profile does
   not mean its dispatcher is running - CONFIRM the reviewer session started and is

@@ -7,6 +7,8 @@
 
 ## Start gates (once per campaign)
 
+- [ ] code-review engine gate: OCR detected / installation offer resolved;
+      `review_engine` recorded in HANDOFF/STATE (ocr: `ocr llm test` verified)
 - [ ] plan approved (single WHAT gate - approval is NOT execution start)
 - [ ] `{{prefix}}_HANDOFF.md` + `{{prefix}}_MANIFEST.json` written; manifest sha256 in state
 - [ ] planning session STOPPED (no execution worktrees or agents were created)
@@ -22,7 +24,8 @@ approval remain bound. -->
 
 - [ ] develop
 - [ ] runtime test-loop (test -> fix batch -> test; no fixed iteration cap)
-- [ ] independent review-loop (FAIL -> fix -> retest -> fresh review)
+- [ ] independent review-loop (FAIL -> fix -> retest -> fresh review; engine per
+      `review_engine`: OCR run + coordinator-derived verdict, or session reviewer)
 - [ ] squash integration / conflict handling (receipt recorded)
 - [ ] post-merge runtime smoke on campaign tree
 - [ ] evidence preserved + cleanup verified (inventory proven removed)

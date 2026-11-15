@@ -39,6 +39,14 @@ and partial functionality, anti-NIH critique enforcement, and lockfile ownership
 adopted dependency. INTENT, RESEARCH, and CRITIQUE belong in the frozen manifest; the
 mutable planning phase state does not. Tabletop scenarios 42-50 exercise these requirements.
 
+## OCR engine validation (v1.7.0)
+
+Static checks additionally require: the section-0 engine gate in SKILL.md; the
+`references/ocr-review.md` contract; `review_engine` recorded in the HANDOFF and STATE
+templates; the exclusive-engine rule (no silent fallback); the blocking severity set
+critical/high/medium; and the not-a-verdict list (partial/failed/budget/skipped/zero
+files). Tabletop scenarios 51-56 exercise these requirements.
+
 ## Tabletop scenarios
 
 Walk the written procedure (SKILL.md Procedure + referenced contracts) and record what
@@ -97,6 +105,12 @@ the text instructs at each step. Expected outcomes below are the pass criteria.
 | 48 | Coordinator designs a custom parser/scheduler/UI component without searching for or evaluating mature open-source libraries | Critic flags a major Lens 2 finding (`REVISE`); no convergence or DAG until a live-verified OSS evaluation and a reuse-or-justified-custom disposition land in RESEARCH |
 | 49 | Coordinator selects a package from model memory, or picks an archived/deprecated/license-incompatible library | Critic flags a critical/major Lens 2/3 finding (`REVISE`); coordinator must verify live registry + upstream repository status and switch to a maintained compatible library or a justified alternative |
 | 50 | Live OSS evaluation finds (a) one library covers ~90% of the feature, or (b) the repository enforces `stdlib-only`; when new packages ARE adopted, parallel tasks need them | (a) whole-coverage option surfaced to the user rather than padding custom tasks to justify a DAG; (b) `stdlib-only` constraint honored and recorded as the justification; adopted packages pinned in shared contracts with manifest/lockfile updates serialized in a prerequisite/exclusive-owner task |
+| 51 | OCR is installed and `ocr llm test` passes at planning start | `review_engine: ocr` recorded in HANDOFF/STATE; all per-task and final code review commissioned exclusively as OCR runs; no inquisitor code-review session; reviewer model pinned as OCR's model |
+| 52 | OCR is not installed at planning start | Installation offered exactly once at the start; accepted -> install + verify then exclusive OCR engine; declined -> decision recorded and standard session reviewer used for this campaign; no silent auto-install |
+| 53 | OCR run exits rc=0 with `status: partial`, `failed(budget)`, or zero reviewed files | Not a verdict: remediate (retry/resume/config) or escalate to the user; never PASS, never a silent switch to an inquisitor session |
+| 54 | OCR JSON contains one medium, one high, and two low findings | FAIL: medium and high block; low findings recorded in evidence only, never fix-card material; executor fixes, runtime retest, fresh OCR run on the new SHA |
+| 55 | Blocking finding has `start_line=end_line=0` (positioning failed) | Finding stays valid: locate via `existing_code` before triage; never dropped because of positioning |
+| 56 | OCR endpoint unreachable mid-campaign; an inquisitor profile is available | No fallback: remediate OCR (config/endpoint/resume) or pause and escalate; the recorded engine binds the campaign; switching engines requires explicit user approval |
 
 ## Recording results
 

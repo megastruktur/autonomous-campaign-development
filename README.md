@@ -25,7 +25,7 @@ event watcher — it runs only when a coordinator explicitly spawns it).
   plan and separately starts execution; destructive actions still stop for explicit
   permission.
 
-Version 1.6.0 · MIT License.
+Version 1.7.0 · MIT License.
 
 ## Requirements
 
@@ -40,8 +40,14 @@ Version 1.6.0 · MIT License.
 - Node.js/npm — only for the installer CLI below.
 - Git.
 - Model access for the coding model, fallback model, and independent reviewer.
+- Optional: [OCR (alibaba/open-code-review)](https://github.com/alibaba/open-code-review)
+  (`ocr` CLI, Node.js/npm install, git >= 2.41 recommended) with a tool-calling-capable
+  review model. When installed and working, OCR becomes the EXCLUSIVE code-review engine
+  for the campaign (v1.7.0); the skill offers installation once at planning start if it
+  is absent. No OCR binary is bundled.
 - The ability to run real runtime tests in the target repository.
-- At least one independent reviewer session (read-only).
+- At least one independent reviewer mechanism: OCR when installed, otherwise an
+  independent reviewer session (read-only).
 
 ## Install (recommended: Orca workspace, project scope)
 
@@ -189,7 +195,14 @@ The skill is a coordinator contract for one development campaign:
   Runtime tests run after the executor declares readiness and after every fix batch.
 - **Independent review**: a read-only reviewer that never edited the code returns an
   explicit complete **PASS/FAIL** verdict with actionable findings, commissioned by the
-  coordinator with a raw, unbiased evidence packet.
+  coordinator with a raw, unbiased evidence packet. **OCR engine (v1.7.0)**: when the
+  `ocr` CLI (alibaba/open-code-review) is installed and working, code review runs
+  exclusively through OCR — one budget-capped `ocr review` run per frozen candidate
+  (effort low per task, medium final), reviewer model pinned as OCR's model, verdict
+  derived by the coordinator from the JSON findings (critical/high/medium block, low
+  never blocks); no inquisitor code-review sessions and no silent fallback. If OCR is
+  absent, the skill offers installation once at planning start. Contract:
+  `references/ocr-review.md`.
 - **Coordinator wakeups via sanctioned mechanisms (v1.2.0)**: campaign START and
   adoption of a running campaign must establish AND verify one sanctioned wakeup
   mechanism before claiming autonomous monitoring. **Option A (recommended for
@@ -270,6 +283,7 @@ skills/acd/
 │   ├── hermes-orca-omp.md                   # dispatch mechanics and command shapes
 │   ├── progress-watchdog.md                 # progress semantics, observer CLI contract
 │   ├── runtime-review-and-integration.md    # topology, review, integration, cleanup
+│   ├── ocr-review.md                        # OCR code-review engine protocol (v1.7.0)
 │   ├── state-and-recovery.md                # state schema, lifecycle, resume
 │   └── validation-tabletop.md               # static checks and tabletop walkthroughs
 ├── templates/
@@ -343,7 +357,8 @@ was not verified against upstream.)
   already-started campaigns keep their original approval; approved-but-never-started
   ones require a fresh-session START under the v1.1.0 contract
   (`references/state-and-recovery.md` describes the migration; nothing is auto-enforced).
-- The full workflow additionally requires Orca + OMP + an independent reviewer.
+- The full workflow additionally requires Orca + OMP + an independent reviewer
+  mechanism (OCR when installed, otherwise a read-only reviewer session).
 
 ## Sources
 

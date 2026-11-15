@@ -43,6 +43,19 @@
 | Reviewer | {{requested_or_default}} | {{resolved_id}} |
 | Final-review (optional) | {{requested_or_default_or_none}} | {{resolved_id_or_none}} |
 
+## Code-review engine (OCR gate)
+
+- review_engine: {{ocr_or_session}}
+- OCR binary / version: {{absolute_path_and_version_or_null}}
+- OCR provider / endpoint: {{provider_name_and_url_or_null}}
+- Installation offer: {{accepted_declined_or_already_installed}}
+
+When `ocr`: all per-task and final code review runs exclusively through OCR
+([../references/ocr-review.md](../references/ocr-review.md)); the reviewer model above
+is OCR's model (pinned, tool-call-verified); no inquisitor code-review sessions; OCR
+failures are remediated or escalated, never silently swapped. When `session`: the
+standard independent reviewer contract applies.
+
 ## Permissions
 
 - Authorized by the plan approval: {{authorized_scope_summary}}

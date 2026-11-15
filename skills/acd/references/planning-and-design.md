@@ -9,6 +9,12 @@ not constitute execution START.
 
 ## Mandatory sequence and gate
 
+Before phase 1, run the code-review engine gate (v1.7.0): detect OCR (`ocr` CLI), offer
+installation once if absent, verify `ocr llm test` when present, and record the
+`review_engine` decision (`ocr` or `session`) in HANDOFF/STATE. When `ocr`, all code
+review runs exclusively through OCR; the planning critic below is unaffected. Contract:
+[ocr-review.md](ocr-review.md).
+
 Complete these phases IN ORDER:
 
 1. **Intent and bounded repository discovery** -> `INTENT.md`.

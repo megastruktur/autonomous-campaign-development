@@ -1,5 +1,5 @@
 {
-  "_readme": "Template for {prefix}_STATE.json. Replace every null and the one example task entry; keep filename-convention strings ({prefix}_*) as written. Sole writer: the coordinator. Atomic replace + revision bump on every write. Unknown stays null. schema_version 2: lifecycle, sessions, plan_manifest, start; planning records the four-phase design gate, exact converged hashes (skill 1.4.0), and research.oss_library_evaluation_completed (skill 1.6.0). Legacy schema_version 1 or missing: see references/state-and-recovery.md before resuming; never fabricate the new fields. execution_policy (campaign-level attempt budget defaults; extensions only via explicit predeclared per-task long-job budgets) and tasks[].attempt/unproductive_attempts record the bounded-attempt policy from SKILL.md section 12 - procedural enforcement, no automated flags.",
+  "_readme": "Template for {prefix}_STATE.json. Replace every null and the one example task entry; keep filename-convention strings ({prefix}_*) as written. Sole writer: the coordinator. Atomic replace + revision bump on every write. Unknown stays null. schema_version 2: lifecycle, sessions, plan_manifest, start; planning records the four-phase design gate, exact converged hashes (skill 1.4.0), and research.oss_library_evaluation_completed (skill 1.6.0). Legacy schema_version 1 or missing: see references/state-and-recovery.md before resuming; never fabricate the new fields. execution_policy (campaign-level attempt budget defaults; extensions only via explicit predeclared per-task long-job budgets) and tasks[].attempt/unproductive_attempts record the bounded-attempt policy from SKILL.md section 12 - procedural enforcement, no automated flags. models.review_engine (null until the planning-start OCR gate decides: ocr or session) and models.ocr record the code-review engine (skill 1.7.0); tasks[].review.engine/ocr_session_id/ocr_output carry OCR run evidence when the engine is ocr.",
   "schema_version": 2,
   "revision": 0,
   "lifecycle": "planning",
@@ -55,6 +55,8 @@
     "coding": { "requested": null, "resolved": null },
     "fallback": { "requested": null, "resolved": null },
     "reviewer": { "requested": null, "resolved": null },
+    "review_engine": null,
+    "ocr": { "binary": null, "version": null, "provider": null },
     "pinned_at": null
   },
   "tasks": [
@@ -76,6 +78,9 @@
       },
       "review": {
         "handle": null,
+        "engine": null,
+        "ocr_session_id": null,
+        "ocr_output": null,
         "verdict": null,
         "bound_to": { "commit": null, "tree": null, "build": null },
         "findings": null,

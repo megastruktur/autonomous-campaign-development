@@ -47,6 +47,12 @@ Template: [../templates/STATE.json](../templates/STATE.json). Key enums:
   `review` are loops (test->fix->test, review->fix->retest->re-review), not single passes.
 - `tasks[].review.verdict`: `PASS` | `FAIL` | `null`, always paired with
   `review.bound_to` (exact commit/tree/build); a verdict without its binding is invalid.
+- `models.review_engine`: `ocr` | `session` | `null` (null until the planning-start OCR
+  gate decides; skill 1.7.0). When `ocr`, `models.ocr` records binary/version/provider
+  and each `tasks[].review` carries `engine: ocr`, `ocr_session_id`, and `ocr_output`
+  (the output JSON path); the verdict is coordinator-derived per
+  [ocr-review.md](ocr-review.md). Legacy states without these fields keep their recorded
+  review mechanism; never fabricate an engine decision on resume.
 - Status mapping: internal `in_review` <-> Orca external `in-review`; internal
   `in_progress` <-> Orca `in-progress`. No other spellings.
 - `lifecycle`: `planning` -> `awaiting_fresh_session_start` -> `executing` ->
@@ -160,7 +166,10 @@ Recovery rule per operation class:
   `terminal list`, reconcile the agent's actual working state from its session and tree.
 - Review: a review in flight during a crash is simply re-commissioned against the same
   frozen commit; a verdict referencing a commit that no longer matches the candidate tip
-  is stale by construction and never reused.
+  is stale by construction and never reused. Under the OCR engine, check the recorded
+  `ocr_session_id` first: a completed run's output JSON is reused only if its bound SHA
+  still matches the candidate; an interrupted run resumes via `ocr review --resume
+  <session-id>` (strict identity check) instead of restarting from zero.
 
 ## Continue-execution resume protocol
 

@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.7.0 — 2026-11-15
+
+Focus: OCR code-review engine. When alibaba/open-code-review (`ocr` CLI) is installed
+and working, ALL campaign code review runs exclusively through OCR instead of
+inquisitor-style reviewer sessions; the reviewer model from the questionnaire becomes
+OCR's model. Planning critique and runtime testing are unchanged.
+
+### Added
+
+- Section-0 code-review engine gate at planning start: detect OCR (PATH plus npm global
+  bin dirs under sandboxed PATHs), offer installation once if absent
+  (`npm install -g @alibaba-group/open-code-review`), verify `ocr llm test`, and record
+  `review_engine` (`ocr` | `session`) in HANDOFF and STATE.
+- `references/ocr-review.md`: full OCR protocol — commit-mode per-task review
+  (`--effort low`, JSON output, `--background-file` packet, `--preview` coverage check,
+  `--max-tokens-budget` guard), range-mode final review (`--effort medium`),
+  coordinator-derived verdicts (critical/high/medium block; low never blocks;
+  partial/failed/budget/skipped runs are never verdicts; positioning-failed findings
+  stay valid), `--resume` crash recovery, secrets via `api_key_cmd` (no keys in config
+  or shell args), and token-economy rationale. `ocr scan` and delegation mode are
+  explicitly excluded; OCR is an MCP client, not a server — the CLI is the integration
+  surface.
+- STATE template: `models.review_engine`, `models.ocr` (binary/version/provider), and
+  per-task `review.engine`/`ocr_session_id`/`ocr_output` evidence fields (schema_version
+  unchanged). HANDOFF/PLAN/TODO templates record the engine decision and gate.
+- Tabletop scenarios 51-56 (engine selection, install offer, not-a-verdict states,
+  blocking severities, positioning failures, no-fallback rule) and static OCR checks;
+  new `tests/test_ocr_review_contract.py`.
+
+### Changed
+
+- Exclusive-engine rule: with OCR recorded, no inquisitor code-review sessions are
+  commissioned and OCR failures are remediated or escalated — never silently swapped
+  for another engine. Reviewer dispatch, START capability checks, crash-window review
+  recovery, and the review contract all route through the engine gate.
+- SKILL.md version bumped to 1.7.0; README requirements/contents updated.
+
 ## 1.6.0 — 2026-11-13
 
 Focus: reuse-first planning. Planning now mandates a live-verified open-source library

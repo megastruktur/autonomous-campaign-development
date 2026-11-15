@@ -16,7 +16,7 @@ SKILL_ROOT = ROOT / "skills" / "acd"
 TEMPLATES = SKILL_ROOT / "templates"
 
 SKILL_NAME = "acd"
-SKILL_VERSION = "1.6.0"
+SKILL_VERSION = "1.7.0"
 OLD_SKILL_NAME = "-".join(["autonomous", "campaign", "development"])  # checked absent
 REPO_SLUG = f"megastruktur/{OLD_SKILL_NAME}"  # preserved by design
 

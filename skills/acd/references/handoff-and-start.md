@@ -9,7 +9,9 @@ not a per-task human gate - it happens once per campaign.
 
 The planning session performs the four gated planning phases (intent + mandatory repository
 discovery; web research + architecture; independent critique/revision; DAG decomposition),
-the model questionnaire, and approval capture. It writes ONLY planning artifacts under
+the model questionnaire, and approval capture. Before phase 1 it also runs the code-review
+engine gate (v1.7.0): detect OCR, offer installation once if absent, and record the
+`review_engine` decision ([ocr-review.md](ocr-review.md)). It writes ONLY planning artifacts under
 `plans/{campaign_name}/`: INTENT, RESEARCH, CRITIQUE, planning phase state, PLAN, task files,
 HANDOFF, MANIFEST, and the initial STATE (`lifecycle: planning`). The DAG is created only
 after an independent `CONVERGED` verdict bound to the current design hashes. It must NOT
@@ -38,7 +40,9 @@ planning session itself.
 The HANDOFF is the execution entrypoint - a curated pointer set, never a transcript
 dump. It contains: campaign goal and scope summary with key decisions; links to PLAN,
 every task file, TODO, and STATE (repo-relative); repository path, original NAMED target
-branch, full starting SHA; requested AND resolved model IDs per role; the authorized
+branch, full starting SHA; requested AND resolved model IDs per role; the code-review
+engine decision (`review_engine`: `ocr` or `session`, with OCR binary path/version and
+provider when `ocr`); the authorized
 permission scope (push/deploy/publication excluded unless explicitly granted - record
 which); verified runtime commands and how each was verified, prerequisites, and known
 blockers (null if none); monitoring and recovery policy (cadence, optional watchdog
@@ -71,9 +75,12 @@ START, in order:
    consciously re-pinned by the user; no pre-existing execution worktrees conflicts;
    coordinator ownership is unique.
 4. Verify capabilities actually available this session: worktree/terminal commands,
-   reviewer mechanism, runtime test capability. Resolve every runtime command honestly -
-   never guess or invent a command shape; an unresolvable command is a blocker recorded
-   as such.
+   reviewer mechanism, runtime test capability. When the HANDOFF records
+   `review_engine: ocr`, re-verify OCR here (binary resolves, `ocr version`, `ocr llm
+   test` with the pinned provider/model); a broken OCR setup is a blocker to remediate
+   or escalate - never a silent switch to session review. Resolve every runtime command
+   honestly - never guess or invent a command shape; an unresolvable command is a
+   blocker recorded as such.
 5. Record the start (`start.started_by/at`, `start.manifest_sha256`,
    `start.startup_checks`), set `lifecycle: executing`, append the event - then proceed
    to topology creation.
