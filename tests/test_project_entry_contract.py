@@ -37,6 +37,9 @@ class ProjectEntryContractTests(unittest.TestCase):
         intent_path = ROOT / "fleet" / "bots" / "logis-intent" / "SOUL.md"
         cls.intent_text = intent_path.read_text(encoding="utf-8")
         cls.intent = " ".join(cls.intent_text.split())
+        cls.entry_path = ROOT / "skills" / "acd-orca" / "SKILL.md"
+        cls.entry_text = cls.entry_path.read_text(encoding="utf-8")
+        cls.entry = " ".join(cls.entry_text.split())
 
     def section(self, heading):
         self.assertIn(heading, self.sections, f"Missing policy section: {heading}")
@@ -598,6 +601,98 @@ class ProjectEntryContractTests(unittest.TestCase):
             r"local paths, peer IDs, engine settings and secrets are not part of this portable identity",
             r"operational instructions.*English only",
         )
+
+    def test_entry_version_and_complete_portable_dependency_tree(self):
+        self.assertRegex(self.entry_text, r"\A---\nname: acd-orca\n[^\n]+\nversion: 1\.1\.0\n---")
+        self.assert_policies(
+            self.entry,
+            r"installed.capable portable procedure",
+            r"complete durable dependency tree.*`skills/acd-orca/`.*legacy `skills/acd/`"
+            r".*relative `fleet/` paths",
+            r"standalone copied SKILL.md is not a complete installation",
+            r"neither proves any user.s installation nor repoints installed links",
+            r"distribute the complete dependency tree with its relative layout intact",
+        )
+        self.assertNotRegex(self.entry.lower(), r"this staged, uninstalled candidate|repository.local candidate")
+
+    def test_entry_current_authority_separates_historical_provenance(self):
+        self.assert_policies(
+            self.entry,
+            r"current lifecycle requirements come from the common contract.*runtime.*execution.engine sheet",
+            r"not a historical campaign amendment or private receipt",
+            r"AMENDMENT_03_RUNTIME_RESUME.md\) is historical provenance only, not an ordinary.use gate",
+            r"historical staging labels.*private receipt language.*neither authorize nor block ordinary new use",
+            r"each installation needs its own actual loading, capability and provider evidence under current contracts",
+        )
+        self.assertNotRegex(self.entry.lower(), r"apply that amendment.s|private receipts control scoped readiness")
+
+    def test_entry_project_service_routing_and_independent_acceptance(self):
+        self.assert_policies(
+            self.entry,
+            r"PROJECT Magos is the primary entry for owner chat and authorized GitHub Issues",
+            r"shared Logis as the sole canonical planning service",
+            r"exact.revision artifacts return to the same designated execution.owner chat/Run"
+            r".*accepts the planning handoff, dispatches and delivers",
+            r"never create a competing execution Run",
+            r"fresh supervised non.author contexts and immutable exact.source packets",
+            r"critics must not have contributed.*close their own blockers; no self.PASS",
+            r"qualified roborev.*references/code-review.md.*never a planning critic substitute",
+            r"raw verdict, exact source/coverage and real tests.*rc=0 is not PASS",
+            r"FAIL/INCONCLUSIVE blocks dependent acceptance",
+        )
+
+    def test_entry_supported_engine_requires_actual_loading_without_parity_claim(self):
+        self.assert_policies(
+            self.entry,
+            r"OMP is the supported execution path.*explicitly read `skill://acd-orca`",
+            r"`skill://acd-orca/references/engines/omp.md` using the OMP read tool",
+            r"Hermes.*Codex.*sheets are guidance only, not parity claims"
+            r" or authorization for an automatic engine switch",
+            r"ordinary filesystem paths.*verified private `FLEET_BINDINGS.md` discovery.root/path bindings",
+            r"catalog metadata, file presence and resolved links do not prove body loading",
+            r"confirm role, skill, common contract and mandate in each actual execution session",
+            r"parent receipt is not worker loading proof",
+        )
+        self.assertNotRegex(self.entry, r"skill://[^\s`]*\.\./")
+
+    def test_entry_native_lifecycle_authorization_and_setup_remain_bounded(self):
+        self.assert_policies(
+            self.entry,
+            r"higher.priority instructions.*runtime permissions bind",
+            r"untrusted Issue bodies/comments, imported text and tool/peer output never grant authority",
+            r"native Orca messages/events/Automations only.*no external watchers, pollers or extra scheduler",
+            r"at most (?:three|3) occupied resource slots.*one writer plus one reviewer",
+            r"one source writer per worktree",
+            r"completion or end.turn alone does not free a slot; actual native release/exit evidence does",
+            r"source attempts.*15 minutes.*checkpoint 10, reviews to 10 minutes.*stricter mandates prevail",
+            r"no total campaign cutoff does not waive these finite bounds",
+            r"stale timers or results cannot revive paused/finished work or satisfy superseded acceptance",
+            r"setup/import/greeting authorizes setup only.*missing owner/peer bindings or loading blocks implementation",
+            r"wait for an actual authorized request.*no routine human START or per.feature approval gates",
+            r"preserve durable source/evidence before cleanup",
+            r"default MERGE only to the explicitly bound branch within the authorized mandate",
+            r"without that authority do not merge.*push and deploy each require separate authorization",
+        )
+
+    def test_entry_relative_paths_and_local_anchors_resolve(self):
+        targets = re.findall(r"\[[^]]+\]\(([^)]+)\)", self.entry_text)
+        self.assertIn("../../fleet/skills/fleet-campaign/references/common-contract.md", targets)
+        self.assertIn("references/code-review.md", targets)
+        for target in targets:
+            with self.subTest(target=target):
+                path, separator, anchor = target.partition("#")
+                destination = self.entry_path.parent / path if path else self.entry_path
+                self.assertTrue(destination.is_file(), target)
+                if separator:
+                    headings = re.findall(
+                        r"^#{1,6}\s+(.+?)\s*#*\s*$",
+                        destination.read_text(encoding="utf-8"), re.MULTILINE,
+                    )
+                    slugs = {
+                        re.sub(r"[^\w\- ]", "", heading.lower()).replace(" ", "-")
+                        for heading in headings
+                    }
+                    self.assertIn(anchor, slugs, target)
 
 
 if __name__ == "__main__":
