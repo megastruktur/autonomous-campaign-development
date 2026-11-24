@@ -1,10 +1,13 @@
 """Static checks for project-entry roles and bridge, not runtime qualification.
 
-Future guide and other SOUL changes are not assumed.
+Setup shell blocks are exercised offline; UI/auth/native runtime readiness is not assumed.
 """
 
+import os
 import re
 import unittest
+import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -780,6 +783,129 @@ class ProjectEntryContractTests(unittest.TestCase):
         for target in targets:
             with self.subTest(target=target):
                 self.assertTrue((self.roles_path.parent / target).is_file(), target)
+
+class SetupGuideTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.path = ROOT / "docs" / "SETUP.md"
+        cls.text = cls.path.read_text(encoding="utf-8")
+        cls.blocks = re.findall(r"^```bash\n(.*?)^```", cls.text, re.MULTILINE | re.DOTALL)
+
+    def test_guide_covers_owner_setup_and_current_readiness(self):
+        self.assertLessEqual(len(self.text.splitlines()), 300)
+        flat = " ".join(self.text.split())
+        for marker in (
+            "Start from scratch", "name/purpose", "Change", "Create",
+            "orca bot list --json", "orca bot chats --bot", "FLEET_BINDINGS.md",
+            "owner_chat:", "owner_run:", "target_branch:", "request_state:",
+            "projects: {cutecare:", "same request/revision", "known-defect fixture",
+            "completion wake", "native release/exit", "No merge/push/deploy",
+            "CuteCare", "Machina", "master", "manually attaches external connectors",
+            "skill://acd-orca/references/engines/omp.md", "read_only_mode = \"plan\"",
+            "not tested by this guide", "compare", "backup", "approval",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, flat)
+        for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", self.text):
+            if not target.startswith("https://"):
+                self.assertTrue((self.path.parent / target).is_file(), target)
+
+    def run_block(self, block, home, **extra):
+        env = os.environ.copy()
+        env.update(HOME=str(home), GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
+        env.update({key: str(value) for key, value in extra.items()})
+        return subprocess.run(
+            ["/bin/bash", "--noprofile", "--norc", "-c", block], cwd=home,
+            env=env, text=True, capture_output=True, timeout=20,
+        )
+
+    def clone_fixture(self, home):
+        repo = home / ".local/share/acd-orca/repo"
+        repo.parent.mkdir(parents=True)
+        subprocess.run(
+            ["git", "clone", "--local", "--no-hardlinks", str(ROOT), str(repo)],
+            check=True, capture_output=True, timeout=20,
+            env={**os.environ, "HOME": str(home), "GIT_CONFIG_NOSYSTEM": "1",
+                 "GIT_CONFIG_GLOBAL": os.devnull},
+        )
+        return repo
+
+    def test_every_offline_install_block_success_and_repeat_preserves_files(self):
+        self.assertEqual(len(self.blocks), 2, "Exercise every Bash install block")
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            repo = self.clone_fixture(home)
+            bot = home / ".orca/bots/example"
+            bot.mkdir(parents=True)
+            source = repo / "fleet/bots/logis/SOUL.md"
+            for block in self.blocks:
+                result = self.run_block(block, home, BOT_HOME=bot, SOUL_SOURCE=source)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                repeated = self.run_block(block, home, BOT_HOME=bot, SOUL_SOURCE=source)
+                self.assertNotEqual(repeated.returncode, 0)
+                self.assertIn("STOP: existing path", repeated.stderr)
+            for name, target in (("skills/acd-orca", "skills/acd-orca"),
+                                 ("skills/acd", "skills/acd"), ("fleet", "fleet")):
+                self.assertEqual((home / ".agents" / name).readlink(), repo / target)
+            self.assertEqual((bot / ".agents/skills/fleet-campaign").readlink(),
+                             repo / "fleet/skills/fleet-campaign")
+            self.assertEqual((bot / "SOUL.md").read_bytes(), source.read_bytes())
+
+    def test_install_collisions_never_replace_existing_paths_or_soul(self):
+        for name in (".agents/skills/acd-orca", ".agents/skills/acd", ".agents/fleet",
+                     ".orca/bots/example/.agents/skills/fleet-campaign", ".orca/bots/example/SOUL.md"):
+            for kind in ("file", "directory", "symlink", "dangling"):
+                with self.subTest(path=name, kind=kind), tempfile.TemporaryDirectory() as tmp:
+                    home = Path(tmp)
+                    repo = self.clone_fixture(home)
+                    bot = home / ".orca/bots/example"
+                    bot.mkdir(parents=True)
+                    collision = home / name
+                    collision.parent.mkdir(parents=True, exist_ok=True)
+                    if kind == "file":
+                        collision.write_text("owner content")
+                    elif kind == "directory":
+                        collision.mkdir()
+                        (collision / "keep").write_text("owner content")
+                    else:
+                        collision.symlink_to(repo if kind == "symlink" else home / "absent")
+                    before = collision.lstat()
+                    block = self.blocks[1 if name.startswith(".orca") else 0]
+                    result = self.run_block(block, home, BOT_HOME=bot,
+                                            SOUL_SOURCE=repo / "fleet/bots/logis/SOUL.md")
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("STOP: existing path", result.stderr)
+                    self.assertEqual(collision.lstat(), before)
+                    if kind == "file":
+                        self.assertEqual(collision.read_text(), "owner content")
+                    if kind == "directory":
+                        self.assertEqual((collision / "keep").read_text(), "owner content")
+
+    def test_missing_dependencies_and_executables_stop_before_install(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            repo = self.clone_fixture(home)
+            dependency = repo / "skills/acd/SKILL.md"
+            dependency.unlink()
+            result = self.run_block(self.blocks[0], home)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("STOP: missing dependency", result.stderr)
+            self.assertFalse((home / ".agents").exists())
+            bot = home / ".orca/bots/example"
+            bot.mkdir(parents=True)
+            (repo / "fleet/skills/fleet-campaign/SKILL.md").unlink()
+            result = self.run_block(self.blocks[1], home, BOT_HOME=bot,
+                                    SOUL_SOURCE=repo / "fleet/bots/logis/SOUL.md")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("STOP: missing bridge", result.stderr)
+            self.assertFalse((bot / "SOUL.md").exists())
+            empty = home / "empty-bin"
+            empty.mkdir()
+            for block in self.blocks:
+                result = self.run_block(block, home, PATH=empty)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("STOP: missing executable", result.stderr)
+
 
 
 if __name__ == "__main__":
