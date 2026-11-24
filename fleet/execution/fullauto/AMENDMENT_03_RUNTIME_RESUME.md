@@ -1,5 +1,8 @@
 # Amendment 03 — authorized recovery, bounded runtimes and final cleanup
 
+> Editorial note: This public copy generalizes project identities for privacy only.
+> Original private evidence remains unchanged, as do historical authority and verdicts.
+
 ## New owner authority
 
 The captain explicitly authorizes resuming and replanning this campaign, necessary tests,
@@ -13,7 +16,7 @@ The same Magos Fleet owner chat and Run remain designated. Retire the no-auto-re
 under this explicit new authority; record this amendment and original block before updating
 state. No duplicate campaign/coordinator. Docs/code authoring remains exclusively native OMP
 in Orca-managed worktrees, one writer per worktree. Do not commit/push/merge/deploy or switch
-installed skills/Bots in this scoped recovery. No actual cutecare connector/business tasks:
+installed skills/Bots in this scoped recovery. No actual external product project connector/business tasks:
 that project still requires captain connector setup and manual testing.
 
 ## Compact remaining work; no restart of completed work

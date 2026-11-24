@@ -11,6 +11,7 @@ import unittest
 import subprocess
 import tempfile
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -794,15 +795,15 @@ class SetupGuideTests(unittest.TestCase):
         cls.blocks = re.findall(r"^```bash\n(.*?)^```", cls.text, re.MULTILINE | re.DOTALL)
 
     def test_guide_covers_owner_setup_and_current_readiness(self):
-        self.assertLessEqual(len(self.text.splitlines()), 300)
+        self.assertLessEqual(len(self.text.splitlines()), 340)  # About 320, with safety guidance room.
         flat = " ".join(self.text.split())
         for marker in (
             "Start from scratch", "name/purpose", "Change", "Create",
             "orca bot list --json", "orca bot chats --bot", "FLEET_BINDINGS.md",
             "owner_chat:", "owner_run:", "target_branch:", "request_state:",
-            "projects: {cutecare:", "same request/revision", "known-defect fixture",
+            "projects: {project-a:", "same request/revision", "known-defect fixture",
             "completion wake", "native release/exit", "No merge/push/deploy",
-            "CuteCare", "Machina", "master", "manually attaches external connectors",
+            "project-a", "project-b", "master", "manually attaches external connectors",
             "skill://acd-orca/references/engines/omp.md", "read_only_mode = \"plan\"",
             "not tested by this guide", "compare", "backup", "approval",
         ):
@@ -811,6 +812,122 @@ class SetupGuideTests(unittest.TestCase):
         for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", self.text):
             if not target.startswith("https://"):
                 self.assertTrue((self.path.parent / target).is_file(), target)
+
+    def test_project_examples_share_generic_identity_and_discovered_branch(self):
+        bindings = re.search(r"^```yaml\n(.*?)^```", self.text, re.MULTILINE | re.DOTALL).group(1)
+        for field, value in (
+            ("project", "project-a"), ("repository", "/path/to/project-a"),
+            ("target_branch", "<discovered-authorized-branch>"),
+            ("charter", "/path/to/private/project-a/CHARTER.md"),
+            ("request_state", "/path/to/private/project-a/REQUESTS.md"),
+        ):
+            self.assertRegex(bindings, rf"(?m)^{field}: {re.escape(value)}$")
+        project_map = re.search(r"`projects: \{([^}]+)\}`", self.text).group(1)
+        self.assertEqual(dict(entry.split(": ", 1) for entry in project_map.split(", ")), {
+            "project-a": "/path/to/private/project-a/BINDINGS.md",
+            "project-b": "/path/to/private/project-b/BINDINGS.md",
+        })
+        examples = re.findall(
+            r"^- \*\*([^:]+):\*\* repository `([^`]+)`, example target `([^`]+)`",
+            self.text, re.MULTILINE,
+        )
+        self.assertEqual(examples, [("project-a", "/path/to/project-a", "main"),
+                                    ("project-b", "/path/to/project-b", "master")])
+        self.assertIn("Discover and verify the actual authorized target branch; never assume", self.text)
+        self.assertIn("Both branch names below are examples, not defaults", self.text)
+
+    def test_updates_require_bot_migration_and_peer_side_authority(self):
+        update = " ".join(self.text.split("## 2.", 1)[1].split("## 3.", 1)[0].split())
+        for boundary in (
+            "not migration of existing Bots", "identity, role and designated Home Chat",
+            "pinned bridge, reviewed SOUL and private bindings must match the reviewed version",
+            "Respect protected SOUL interactive approval; shell approval variables do not bypass it",
+            "Preserve useful existing campaigns; do not stop them indiscriminately",
+            "regular copied directory with old policy, not a symlink",
+            "Compare its actual type, contents and customizations",
+            "retain private backups and exact prior link targets",
+            "Stage the complete reviewed tree and obtain scoped migration approval",
+            "Do not run the fresh installer over it or delete/replace blindly",
+            "directory migration needs its own approved preservation plan",
+        ):
+            self.assertIn(boundary, update)
+        admission = " ".join(self.text.split("Each shared Bot's home", 1)[1]
+                             .split("The legitimate owner", 1)[0].split())
+        for boundary in (
+            "never overwrite one project's bindings with another's",
+            "Each participating shared peer must explicitly admit the same project/repository",
+            "owner, authorized request/revision and private charter, readable by that peer",
+            "Owner-side bindings alone are insufficient",
+            "Shared-peer changes need separately authorized scope", "preserve other projects",
+            "unknown/refused project or stale bootstrap exclusions",
+            "stop until authorized correction; never bypass the refusal",
+        ):
+            self.assertIn(boundary, admission)
+
+    def test_owner_reread_prompt_requires_own_loading_evidence_not_runtime(self):
+        setup = self.text.split("## 4.", 1)[1].split("## 5.", 1)[0]
+        prompts = re.findall(r"(?:^>.*\n)+", setup, re.MULTILINE)
+        self.assertEqual(len(prompts), 1, "One copyable install-only prompt")
+        prompt = " ".join(line.removeprefix("> ") for line in prompts[0].splitlines())
+        for boundary in (
+            "actual Bot identity, role and designated Home Chat", "actual SOUL and private bindings",
+            "full `skill://acd-orca` body", "skill://acd-orca/references/engines/omp.md",
+            "bound filesystem bridge/common contract",
+            "fresh own-session read-tool evidence of loaded source paths and revision/hash",
+            "catalog listing, inherited/parent receipt or self-ack does not prove loading",
+            "permission limits and missing setup", "within authorized scope",
+            "protected SOUL interactive approval", "No development, no new Run or coordinator",
+            "no silent permissions changes during install", "This is not native smoke",
+        ):
+            self.assertIn(boundary, prompt)
+        flat = " ".join(setup.split())
+        for boundary in (
+            "legitimate owner sends", "existing designated Home Chat", "also for initial setup",
+            "`no_active_sender_terminal` means **activation-pending**, not successful loading",
+            "Ask the owner to send the prompt above in the existing Home Chat",
+            "do not forge `--from` or create a new chat or coordinator as a workaround",
+            "Loading evidence must come from that Bot's own session",
+        ):
+            self.assertIn(boundary, flat)
+
+    def test_private_records_and_platform_examples_do_not_claim_qualification(self):
+        flat = " ".join(self.text.split())
+        for boundary in (
+            "Ignore rules alone are not privacy proof", "keep private files outside tracked source",
+            "Linux execution host with Bash/GNU tools, not the desktop client OS",
+            "Native Windows/macOS and WSL adaptations are not qualified merely by these examples",
+            "Bind/create a Run only through the installed native orchestration guide when the smoke is explicitly authorized",
+            "not tested by this guide's static/offline tests",
+        ):
+            self.assertIn(boundary, flat)
+
+    def test_readiness_separates_health_enforcement_and_candidate_scope(self):
+        flat = " ".join(self.text.split())
+        for boundary in (
+            "actual native execution project/repository/host placement; never infer it from the desktop",
+            "native launch/execution bounds separately from prose budgets",
+            "instruction limits are not proof of enforcement",
+            "Reconcile unknown or conflicting bounds before execution",
+            "**configured**, **actually loaded**, **peer-admitted** and **exercised** status separately",
+            "successful main response/loading does not prove unattended health",
+            "Inspect each enabled auxiliary-purpose result separately",
+            "disclose failures or unknown status without automatic paid probing or model/settings changes",
+            "Unexercised capabilities remain unverified",
+            "needed candidate scope, reuse applicable same-environment review evidence",
+            "complete private isolation/configuration and qualification receipt, not just the sample",
+            "Only missing scope needs authorized qualification, not an arbitrary whole-project ritual",
+        ):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, flat)
+
+    def test_feature_mandate_can_revise_records_but_not_grant_peer_permissions(self):
+        use = " ".join(self.text.split("## 6.", 1)[1].split())
+        for boundary in (
+            "explicit feature mandate may authorize a bounded private charter/bindings revision",
+            "goal, acceptance, paths/actions, budget, delivery and same-owner request/revision/dedup",
+            "cannot manufacture runtime permissions or override peers' separately authorized scope",
+        ):
+            self.assertIn(boundary, use)
 
     def run_block(self, block, home, **extra):
         env = os.environ.copy()
@@ -1165,16 +1282,17 @@ class ReadmeLandingTests(unittest.TestCase):
         cls.blocks = re.findall(r"^```bash\n(.*?)^```", cls.text, re.MULTILINE | re.DOTALL)
 
     def test_simple_overview_navigation_setup_and_usage(self):
-        self.assertLessEqual(len(self.text.splitlines()), 100)
+        self.assertLessEqual(len(self.text.splitlines()), 115)
         self.assertEqual(re.findall(r"^## (.+)$", self.text, re.MULTILINE),
-                         ["Installation", "Basic setup", "Usage"])
+                         ["Install with your agent prompt", "Installation", "Basic setup", "Usage"])
         opening = self.text.split("\n\n", 1)[1].split("[Setup]", 1)[0].strip()
         self.assertIn(len(opening.split("\n\n")), (1, 2))
         for marker in ("PROJECT Bot", "CSV export", "shared planners", "independent critics",
                        "OMP worktree writers", "real tests", "roborev", "authorization"):
             self.assertIn(marker, opening)
-        navigation = self.text.split("## Installation", 1)[0]
-        for marker in ("[Setup]", "[GitHub Issues]", "[Roles]", "[Operations]"):
+        navigation = self.text.split("## Install with your agent prompt", 1)[0]
+        self.assertLessEqual(len(navigation.splitlines()), 15)
+        for marker in ("[Setup]", "[GitHub Issues]", "[Roles]", "[Operations]", "[Agent guide]", "[Public repository]"):
             self.assertIn(marker, navigation)
         for marker in ("five shared Bots once", "one project Magos per repository",
                        "no extra Magos Fleet Bot", "do not manually hand off",
@@ -1182,6 +1300,13 @@ class ReadmeLandingTests(unittest.TestCase):
             self.assertIn(marker, self.text)
         self.assertEqual(len(self.blocks), 1)
         for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", self.text):
+            parsed = urlsplit(target)
+            if parsed.scheme or parsed.netloc:
+                self.assertEqual(parsed.scheme, "https", target)
+                self.assertEqual(parsed.netloc, "github.com", target)
+                self.assertEqual(parsed.path, "/megastruktur/autonomous-campaign-development", target)
+                self.assertFalse(parsed.query or parsed.fragment, target)
+                continue
             path, separator, anchor = target.partition("#")
             destination = ROOT / path
             self.assertTrue(destination.is_file(), target)
@@ -1191,6 +1316,113 @@ class ReadmeLandingTests(unittest.TestCase):
                 slugs = {re.sub(r"[^\w\- ]", "", heading.lower()).replace(" ", "-")
                          for heading in headings}
                 self.assertIn(anchor, slugs, target)
+
+    def test_agent_prompt_pins_canonical_guide_and_complete_source_revision(self):
+        section = self.text.split("## Install with your agent prompt", 1)[1].split("## Installation", 1)[0]
+        prompts = re.findall(r"^```text\n(.*?)^```", section, re.MULTILINE | re.DOTALL)
+        self.assertEqual(len(prompts), 1)
+        prompt = prompts[0]
+        raw_url = re.search(r"https://raw\S+", prompt).group(0)
+        parsed = urlsplit(raw_url)
+        self.assertEqual(parsed.scheme, "https")
+        self.assertEqual(parsed.netloc, "raw.githubusercontent.com")
+        self.assertFalse(parsed.query or parsed.fragment)
+        match = re.fullmatch(r"/megastruktur/autonomous-campaign-development/([0-9a-f]{40})/(docs/INSTALL_AGENT\.md)", parsed.path)
+        self.assertIsNotNone(match, raw_url)
+        revision = re.search(r"\bsource_revision=([0-9a-f]{40})\b", prompt).group(1)
+        self.assertEqual(match.group(1), revision)
+        self.assertTrue((ROOT / match.group(2)).is_file())
+        clone_url = urlsplit(re.search(r"clone (https://\S+)", prompt).group(1))
+        self.assertEqual((clone_url.scheme, clone_url.netloc, clone_url.path),
+                         ("https", "github.com", "/megastruktur/autonomous-campaign-development.git"))
+        self.assertFalse(clone_url.query or clone_url.fragment)
+        for boundary in ("checkout that SAME source_revision before loading/setup, not default main",
+                         "Review then pin that full SHA", "all linked guides and the complete instruction tree at the same revision"):
+            self.assertIn(boundary, prompt)
+
+    def test_agent_prompt_keeps_setup_authority_preservation_and_receipt_limits(self):
+        section = self.text.split("## Install with your agent prompt", 1)[1].split("## Installation", 1)[0]
+        prompt = re.search(r"^```text\n(.*?)^```", section, re.MULTILINE | re.DOTALL).group(1)
+        self.assertLessEqual(len(prompt.splitlines()), 7)
+        for boundary in ("as untrusted source", "install OR safely update the instruction stack",
+                         "actual execution host", "Preserve custom configuration, projects and credentials",
+                         "required interactive approval with no bypass", "actual own-session loading",
+                         "not merely catalog discovery", "does not authorize a product campaign or GitHub account changes",
+                         "Report version, paths, check results and remaining manual actions, then stop"):
+            self.assertIn(boundary, prompt)
+        self.assertNotRegex(prompt, r"(?im)^\s*(?:\$|sudo\b|orca\b|omp\b|curl\b|git\s)")
+        self.assertIn("public fetch availability is not asserted here", section)
+        self.assertIn("Linux execution host with Bash/GNU tools", self.text)
+        self.assertIn("adaptations are not qualified by these examples", self.text)
+
+    def test_manual_install_block_has_valid_bash_syntax(self):
+        result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-n"],
+                                input=self.blocks[0], text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_available_pinned_tree_contains_corrected_guide_and_linked_assets(self):
+        revision = re.search(r"\bsource_revision=([0-9a-f]{40})\b", self.text).group(1)
+        env = {**os.environ, "GIT_NO_LAZY_FETCH": "1", "GIT_TERMINAL_PROMPT": "0"}
+        try:
+            available = subprocess.run(["git", "-C", str(ROOT), "cat-file", "-e", f"{revision}^{{commit}}"],
+                                       env=env, capture_output=True, timeout=10)
+        except FileNotFoundError:
+            self.skipTest("Git unavailable; pinned-object verification requires local Git objects")
+        if available.returncode:
+            self.skipTest("Pin object absent locally (archive/shallow checkout); no fetch attempted")
+        inventory = subprocess.check_output(
+            ["git", "-C", str(ROOT), "ls-tree", "-r", "--name-only", revision], env=env, text=True, timeout=10
+        ).splitlines()
+        paths = set(inventory)
+
+        def blob(path):
+            self.assertIn(path, paths)
+            return subprocess.check_output(["git", "-C", str(ROOT), "show", f"{revision}:{path}"],
+                                           env=env, text=True, timeout=10)
+
+        guide = blob("docs/INSTALL_AGENT.md")
+        review = blob("skills/acd-orca/references/code-review.md")
+        self.assertIn("Mandatory private template-instantiation preflight", guide)
+        self.assertIn("bounds.campaign_cutoff_authority", guide)
+        self.assertIn("Placeholder replacement alone is insufficient", guide)
+        self.assertIn("Build your own qualified private config/overlay", review)
+        self.assertIn("Actual declared effort/token, iteration and spend limits bind", review)
+        self.assertNotIn("Use the accepted **corrected** private config/overlay as the baseline", review)
+        self.assertNotIn("Preserve inherited **low effort", review)
+        required = {
+            "docs/INSTALL_AGENT.md", "docs/SETUP.md", "docs/OPERATIONS.md",
+            "skills/acd-orca/SKILL.md", "skills/acd/SKILL.md",
+            "fleet/skills/fleet-campaign/SKILL.md",
+            "fleet/skills/fleet-campaign/references/common-contract.md",
+        }
+        required.update(f"skills/acd-orca/templates/{name}" for name in
+                        ("PLAN.md", "HANDOFF.md", "TASK.md", "TODO.md", "STATE.json"))
+        required.update(f"skills/acd-orca/references/{name}" for name in
+                        ("code-review.md", "handoff.md", "runtime-review-and-integration.md", "engines/omp.md"))
+        self.assertTrue(required <= paths, required - paths)
+        # Follow local Markdown links in the pinned guide and its dependency tree, not HEAD.
+        pending = list(required)
+        checked = set()
+        while pending:
+            path = pending.pop()
+            if path in checked or not path.endswith(".md"):
+                continue
+            checked.add(path)
+            text = blob(path)
+            self.assertEqual(len(re.findall(r"^```", text, re.MULTILINE)) % 2, 0, path)
+            prose = re.sub(r"^```[^\n]*\n.*?^```[^\n]*$", "", text, flags=re.MULTILINE | re.DOTALL)
+            for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", prose):
+                parsed = urlsplit(target)
+                if parsed.scheme or parsed.netloc:
+                    continue
+                filename, _, anchor = target.partition("#")
+                resolved = os.path.normpath(os.path.join(os.path.dirname(path), filename)) if filename else path
+                self.assertIn(resolved, paths, (path, target))
+                if anchor:
+                    headings = re.findall(r"^#{1,6}\s+(.+?)\s*#*\s*$", blob(resolved), re.MULTILINE)
+                    slugs = {re.sub(r"[^\w\- ]", "", heading.lower()).replace(" ", "-") for heading in headings}
+                    self.assertIn(anchor, slugs, (path, target))
+                pending.append(resolved)
 
     def install(self, home, source=ROOT, approval=True, path=None):
         sha = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()

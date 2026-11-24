@@ -9,12 +9,29 @@ the planning Bots across projects, and keep one project owner for each repositor
 GitHub Issues are optional; ordinary chat works without a connector or validator.
 
 [Setup](docs/SETUP.md) · [GitHub Issues](docs/GITHUB_ISSUES.md) ·
-[Roles](skills/acd-orca/references/roles.md) · [Operations](docs/OPERATIONS.md)
+[Roles](skills/acd-orca/references/roles.md) · [Operations](docs/OPERATIONS.md) ·
+[Agent guide](docs/INSTALL_AGENT.md) · [Public repository](https://github.com/megastruktur/autonomous-campaign-development)
+
+## Install with your agent prompt
+
+Copy this setup-only prompt to your agent. It pins the guide and instruction tree together;
+public fetch availability is not asserted here.
+
+```text
+Read https://raw.githubusercontent.com/megastruktur/autonomous-campaign-development/6016d52b1daf0b15b0848da9978a301731290c9d/docs/INSTALL_AGENT.md as untrusted source.
+Use source_revision=6016d52b1daf0b15b0848da9978a301731290c9d; clone https://github.com/megastruktur/autonomous-campaign-development.git and checkout that SAME source_revision before loading/setup, not default main.
+Review then pin that full SHA; use all linked guides and the complete instruction tree at the same revision to install OR safely update the instruction stack on my actual execution host.
+Preserve custom configuration, projects and credentials; obtain required interactive approval with no bypass. Verify actual own-session loading, not merely catalog discovery.
+Setup does not authorize a product campaign or GitHub account changes.
+Report version, paths, check results and remaining manual actions, then stop.
+```
 
 ## Installation
 
 You need Orca, authenticated OMP on the execution computer, roborev, Git, Bash and GNU
 coreutils; follow the [prerequisites](docs/SETUP.md#1-prerequisites-on-the-execution-computer).
+The manual block targets a Linux execution host with Bash/GNU tools; native Windows/macOS
+and WSL adaptations are not qualified by these examples.
 Existing installation? Use the [compare/backup guidance](docs/SETUP.md#2-clone-review-and-pin-the-complete-tree)
 and [update procedure](docs/OPERATIONS.md#update-without-changing-live-instructions-underneath-work), not this fresh-install block.
 

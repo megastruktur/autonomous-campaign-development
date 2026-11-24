@@ -15,6 +15,8 @@ This guide configures instructions; it does not grant access or prove runtime re
   configure its [native ACP client](https://www.roborev.io/docs/advanced/acp.md) for OMP below.
 - Have Git, Bash and GNU coreutils (`ln -sT`), a local project checkout, and its actual
   build/test commands. Python 3.11+ is only needed for this repository's optional tests.
+  These blocks target a Linux execution host with Bash/GNU tools, not the desktop client OS.
+  Native Windows/macOS and WSL adaptations are not qualified merely by these examples.
 
 Inspect `orca --help`, `omp --help`, `omp acp --help`, `roborev --help` and
 `roborev review --help` on that computer. A missing executable stops setup; install it
@@ -32,6 +34,16 @@ never automatic elevation; prefer approval mode for untrusted intake under the s
 **Existing installation? Stop and compare first.** Never force these links, overwrite a
 SOUL, or pull underneath active installed links. Review a separate new tree, compare local
 changes, obtain explicit backup/migration approval, then verify fresh-session loading.
+Updating the shared skill is **not migration of existing Bots**. Inspect each actual Bot's
+identity, role and designated Home Chat: its pinned bridge, reviewed SOUL and private bindings
+must match the reviewed version. Respect protected SOUL interactive approval; shell approval
+variables do not bypass it. Preserve useful existing campaigns; do not stop them indiscriminately.
+An existing per-Bot bridge may be a regular copied directory with old policy, not a symlink.
+Compare its actual type, contents and customizations; retain private backups and exact prior
+link targets. Stage the complete reviewed tree and obtain scoped migration approval before
+changing owned paths. Do not run the fresh installer over it or delete/replace blindly.
+Use the [operations update/rollback guidance](OPERATIONS.md); directory migration needs its own
+approved preservation plan, not the symlink-only rollback procedure.
 
 Download without enabling instructions. These network commands are owner-run, not exercised
 by the offline tests. Run in Bash; an existing destination (including dangling links) stops:
@@ -171,8 +183,9 @@ Bind/create a Run only through the installed native orchestration guide when the
 explicitly authorized. Until then `owner_run` stays unbound, not a fabricated identifier.
 
 Create private `FLEET_BINDINGS.md` in each Bot home, outside tracked source, with a referenced
-private charter. This Markdown example is an operational record, not an Orca parser schema.
-Replace every placeholder with verified values before admitting development:
+private charter. Ignore rules alone are not privacy proof; keep private files outside tracked
+source and inspect what you publish. This Markdown is an operational record, not an Orca parser
+schema. Replace every placeholder with verified values before admitting development:
 
 ```yaml
 role: project-magos
@@ -181,10 +194,10 @@ source_revision: <reviewed-full-SHA>
 discovery_root: /path/to/execution-home/.agents
 bridge: /path/to/durable/acd-orca/repo/fleet/skills/fleet-campaign/SKILL.md
 common: /path/to/durable/acd-orca/repo/fleet/skills/fleet-campaign/references/common-contract.md
-project: example-project
-repository: /path/to/project
+project: project-a
+repository: /path/to/project-a
 repository_identity: <verified-repository-identity>
-target_branch: main
+target_branch: <discovered-authorized-branch>
 owner_bot: <verified-bot-address>
 owner_chat: <verified-home-chat-id>
 owner_run: null # bind from native receipt before dispatch
@@ -198,9 +211,9 @@ commands: {build: '<repo build command>', test: '<repo test command>', smoke: '<
 model: <approved-exact-OMP-model-route>
 review: {provider: roborev, engine: acp.omp, readiness: unverified}
 resources: {slots: 3, writers_per_worktree: 1, source_minutes: 15, checkpoint_minutes: 10, review_minutes: 10}
-charter: /path/to/private/project/CHARTER.md
+charter: /path/to/private/project-a/CHARTER.md
 mandate: setup-only # later reference exact authorized request, scope and revision
-request_state: /path/to/private/project/REQUESTS.md
+request_state: /path/to/private/project-a/REQUESTS.md
 delivery: {merge: false, push: false, deploy: false}
 github: {enabled: false} # optional: trusted repository, actor, event and source reply route
 ```
@@ -210,21 +223,41 @@ commands, model, limits and charter. Run binding and successful review readiness
 before coding dispatch. GitHub is optional; unset credentials never belong here. The charter
 records allowed paths/actions, exclusions, request/revision/dedup identity and delivery authority;
 it cannot create permission. Unknown or conflicting bindings block mutation.
+Record actual native execution project/repository/host placement; never infer it from the desktop.
+Record observed native launch/execution bounds separately from prose budgets; instruction limits
+are not proof of enforcement. Reconcile unknown or conflicting bounds before execution.
 
 Each shared Bot's home has one binding index with its role/source/peer records and a map such
-as `projects: {cutecare: /path/to/private/cutecare/BINDINGS.md, machina: /path/to/private/machina/BINDINGS.md}`.
+as `projects: {project-a: /path/to/private/project-a/BINDINGS.md, project-b: /path/to/private/project-b/BINDINGS.md}`.
 Keep each project's charter, owner/chat/Run and request state separate. Add a mapping after
 comparison/approval, never overwrite one project's bindings with another's. Resolve the project
 from each commission; missing/ambiguous identity stops work. Do not put project facts in shared memory.
+Each participating shared peer must explicitly admit the same project/repository, designated
+owner, authorized request/revision and private charter, readable by that peer. Owner-side
+bindings alone are insufficient. Shared-peer changes need separately authorized scope and must
+preserve other projects. For unknown/refused project or stale bootstrap exclusions, diagnose
+the actual peer's bindings/SOUL and stop until authorized correction; never bypass the refusal.
 
-Setup-only bootstrap prompt for each Bot:
+The legitimate owner sends this single setup-only bootstrap/reread prompt in each Bot's
+**existing designated Home Chat**, also for initial setup:
 
-> Read your SOUL and verified bindings. Discover/propose missing exact peers, paths and owner
-> chat from the repository and permissions I supply. Persist only verified private bindings
-> and charter after resolving conflicts. Read `skill://acd-orca`, then
+> Setup only: inspect and report your actual Bot identity, role and designated Home Chat.
+> Read your actual SOUL and private bindings, the full `skill://acd-orca` body,
 > `skill://acd-orca/references/engines/omp.md`, and the bound filesystem bridge/common contract.
-> Report actual loaded paths/hashes, model, permission limits and missing setup. No development,
-> new coordinator or automatic permission changes. A catalog listing or parent receipt is not loading proof.
+> Provide fresh own-session read-tool evidence of loaded source paths and revision/hash.
+> A catalog listing, inherited/parent receipt or self-ack does not prove loading.
+> Report model, permission limits and missing setup; propose corrections to conflicting or
+> missing peers, paths, owner and charter. Persist only verified private bindings within
+> authorized scope; respect protected SOUL interactive approval. No development, no new Run
+> or coordinator, and no silent permissions changes during install. This is not native smoke.
+
+`no_active_sender_terminal` means **activation-pending**, not successful loading. Ask the owner
+to send the prompt above in the existing Home Chat; do not forge `--from` or create a new chat
+or coordinator as a workaround. Loading evidence must come from that Bot's own session.
+Report **configured**, **actually loaded**, **peer-admitted** and **exercised** status separately.
+A successful main response/loading does not prove unattended health. Inspect each enabled
+auxiliary-purpose result separately; disclose failures or unknown status without automatic paid
+probing or model/settings changes. Unexercised capabilities remain unverified.
 
 ## 5. Establish review readiness, then one tiny native smoke
 
@@ -252,7 +285,10 @@ The supported review shape, after admission, is `roborev review --local --dirty 
 Use a separate frozen no-hooks snapshot and private data/temp/session directories as the contract
 requires; never aim local review at the live checkout merely to try it. No OCR fallback.
 
-Authorize a bounded tiny clean fixture and a known-defect fixture in disposable storage.
+For the needed candidate scope, reuse applicable same-environment review evidence, including the
+complete private isolation/configuration and qualification receipt, not just the sample above.
+Only missing scope needs authorized qualification, not an arbitrary whole-project ritual:
+authorize a bounded tiny clean fixture and a known-defect fixture in disposable storage.
 Require clean acceptance and detection of the known defect, complete source/read coverage,
 raw verdict, actual model/tool/provider completion and unchanged reviewed bytes. Error/refusal
 must remain failure or INCONCLUSIVE; rc=0 is not PASS. Record your own readiness scope privately.
@@ -277,15 +313,22 @@ static/offline tests**. No whole validator campaign is required.
 
 ## 6. Use the project Bot
 
+A later explicit feature mandate may authorize a bounded private charter/bindings revision:
+record goal, acceptance, paths/actions, budget, delivery and same-owner request/revision/dedup.
+That revision cannot manufacture runtime permissions or override peers' separately authorized scope.
+
 Now send the authorized request to PROJECT Magos. It commissions Logis; you do not manually
 handoff. For example: “Add CSV export, reuse existing patterns, run the named business scenario;
 MERGE to the bound branch after independent review/tests. No push or deploy.” Default MERGE
 requires explicit bound-branch mandate; push/deploy are separately authorized. Pause/cancel
 and scope changes go to the same owner, without routine intermediate human START gates.
 
-- **CuteCare:** repository `/path/to/cutecare`, target `main`; owner manually attaches external
+Discover and verify the actual authorized target branch; never assume `main` or `master`.
+Both branch names below are examples, not defaults:
+
+- **project-a:** repository `/path/to/project-a`, example target `main`; owner manually attaches external
   connectors. Require the actual business acceptance scenario, not only unit tests. No automatic connector setup.
-- **Machina:** repository `/path/to/machina`, target `master`; no production restart, migration
+- **project-b:** repository `/path/to/project-b`, example target `master`; no production restart, migration
   or other production side effects without a separate explicit mandate.
 
 GitHub intake is optional and configured separately; chat-only setup works now. Until authorized
