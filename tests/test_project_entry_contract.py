@@ -1331,7 +1331,6 @@ class ReadmeLandingTests(unittest.TestCase):
         self.assertIsNotNone(match, raw_url)
         revision = re.search(r"\bsource_revision=([0-9a-f]{40})\b", prompt).group(1)
         self.assertEqual(match.group(1), revision)
-        self.assertEqual(revision, "91bad7df104a5b64abd4c537634b99e5d4ac0dc9")
         self.assertTrue((ROOT / match.group(2)).is_file())
         clone_url = urlsplit(re.search(r"clone (https://\S+)", prompt).group(1))
         self.assertEqual((clone_url.scheme, clone_url.netloc, clone_url.path),
@@ -1360,6 +1359,70 @@ class ReadmeLandingTests(unittest.TestCase):
         result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-n"],
                                 input=self.blocks[0], text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_available_pinned_tree_contains_corrected_guide_and_linked_assets(self):
+        revision = re.search(r"\bsource_revision=([0-9a-f]{40})\b", self.text).group(1)
+        env = {**os.environ, "GIT_NO_LAZY_FETCH": "1", "GIT_TERMINAL_PROMPT": "0"}
+        try:
+            available = subprocess.run(["git", "-C", str(ROOT), "cat-file", "-e", f"{revision}^{{commit}}"],
+                                       env=env, capture_output=True, timeout=10)
+        except FileNotFoundError:
+            self.skipTest("Git unavailable; pinned-object verification requires local Git objects")
+        if available.returncode:
+            self.skipTest("Pin object absent locally (archive/shallow checkout); no fetch attempted")
+        inventory = subprocess.check_output(
+            ["git", "-C", str(ROOT), "ls-tree", "-r", "--name-only", revision], env=env, text=True, timeout=10
+        ).splitlines()
+        paths = set(inventory)
+
+        def blob(path):
+            self.assertIn(path, paths)
+            return subprocess.check_output(["git", "-C", str(ROOT), "show", f"{revision}:{path}"],
+                                           env=env, text=True, timeout=10)
+
+        guide = blob("docs/INSTALL_AGENT.md")
+        review = blob("skills/acd-orca/references/code-review.md")
+        self.assertIn("Mandatory private template-instantiation preflight", guide)
+        self.assertIn("bounds.campaign_cutoff_authority", guide)
+        self.assertIn("Placeholder replacement alone is insufficient", guide)
+        self.assertIn("Build your own qualified private config/overlay", review)
+        self.assertIn("Actual declared effort/token, iteration and spend limits bind", review)
+        self.assertNotIn("Use the accepted **corrected** private config/overlay as the baseline", review)
+        self.assertNotIn("Preserve inherited **low effort", review)
+        required = {
+            "docs/INSTALL_AGENT.md", "docs/SETUP.md", "docs/OPERATIONS.md",
+            "skills/acd-orca/SKILL.md", "skills/acd/SKILL.md",
+            "fleet/skills/fleet-campaign/SKILL.md",
+            "fleet/skills/fleet-campaign/references/common-contract.md",
+        }
+        required.update(f"skills/acd-orca/templates/{name}" for name in
+                        ("PLAN.md", "HANDOFF.md", "TASK.md", "TODO.md", "STATE.json"))
+        required.update(f"skills/acd-orca/references/{name}" for name in
+                        ("code-review.md", "handoff.md", "runtime-review-and-integration.md", "engines/omp.md"))
+        self.assertTrue(required <= paths, required - paths)
+        # Follow local Markdown links in the pinned guide and its dependency tree, not HEAD.
+        pending = list(required)
+        checked = set()
+        while pending:
+            path = pending.pop()
+            if path in checked or not path.endswith(".md"):
+                continue
+            checked.add(path)
+            text = blob(path)
+            self.assertEqual(len(re.findall(r"^```", text, re.MULTILINE)) % 2, 0, path)
+            prose = re.sub(r"^```[^\n]*\n.*?^```[^\n]*$", "", text, flags=re.MULTILINE | re.DOTALL)
+            for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", prose):
+                parsed = urlsplit(target)
+                if parsed.scheme or parsed.netloc:
+                    continue
+                filename, _, anchor = target.partition("#")
+                resolved = os.path.normpath(os.path.join(os.path.dirname(path), filename)) if filename else path
+                self.assertIn(resolved, paths, (path, target))
+                if anchor:
+                    headings = re.findall(r"^#{1,6}\s+(.+?)\s*#*\s*$", blob(resolved), re.MULTILINE)
+                    slugs = {re.sub(r"[^\w\- ]", "", heading.lower()).replace(" ", "-") for heading in headings}
+                    self.assertIn(anchor, slugs, (path, target))
+                pending.append(resolved)
 
     def install(self, home, source=ROOT, approval=True, path=None):
         sha = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
