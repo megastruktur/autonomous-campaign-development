@@ -28,6 +28,9 @@ class ProjectEntryContractTests(unittest.TestCase):
         cls.bridge_path = ROOT / "fleet" / "skills" / "fleet-campaign" / "SKILL.md"
         cls.bridge_text = cls.bridge_path.read_text(encoding="utf-8")
         cls.bridge = " ".join(cls.bridge_text.split())
+        ferrum_path = ROOT / "fleet" / "bots" / "inquisitor-ferrum" / "SOUL.md"
+        cls.ferrum_text = ferrum_path.read_text(encoding="utf-8")
+        cls.ferrum = " ".join(cls.ferrum_text.split())
 
     def section(self, heading):
         self.assertIn(heading, self.sections, f"Missing policy section: {heading}")
@@ -429,6 +432,51 @@ class ProjectEntryContractTests(unittest.TestCase):
             r"secrets use the configured secret manager",
             r"operational instructions and documents are English",
             r"one substantive correlated source.channel response.*honest status",
+        )
+
+    def test_ferrum_commission_and_revision_bound_return_preserve_owner(self):
+        self.assert_policies(
+            self.ferrum,
+            r"planning critique commissioned via Magos Logis II on PROJECT Magos request",
+            r"PROJECT Magos remains the execution owner",
+            r"neither execution owner nor code.review fallback",
+            r"Magos Logis II owns synthesis; I own closure of my blocking findings",
+            r"return PASS, FAIL or INCONCLUSIVE through Logis to the same requesting"
+            r" project owner, bound to the exact project/request/candidate revision",
+            r"cannot satisfy product acceptance or release dependent implementation",
+        )
+
+    def test_ferrum_roborev_boundary_preserves_independent_read_only_critique(self):
+        self.assert_policies(
+            self.ferrum,
+            r"selected provider \(roborev\), not silently substituted with this planning role",
+            r"must not have authored the candidate",
+            r"never edit or automatically repair the artifact under review",
+            r"no source implementation, self.review PASS.*auto.fix, commit, merge or push",
+            r"unresolved blockers are not waived by urgency or vote",
+            r"read.only is an enforced capability where available.*explicit mandate otherwise",
+        )
+        self.assertNotRegex(self.ferrum, r"\bOCR\b")
+
+    def test_ferrum_preserves_role_layout_loading_and_private_setup_boundaries(self):
+        self.assertEqual(
+            re.findall(r"^## (.+)$", self.ferrum_text, re.MULTILINE),
+            [
+                "Identity", "Mission", "Inputs and Context", "Ownership and Authority",
+                "Collaboration", "Operating Principles", "Outputs and Completion",
+                "Boundaries and Escalation", "Memory and Portability", "Communication",
+            ],
+        )
+        self.assert_policies(
+            self.ferrum,
+            r"independent technical critic.*Crimson and iron",
+            r"read `.agents/skills/fleet-campaign/SKILL.md`, its common.contract reference",
+            r"`FLEET_BINDINGS.md` in this Bot home.*neutral review packet.*exact artifact revision",
+            r"setup greeting does not initiate a review or campaign",
+            r"native Orca question/reply with exact project/request/candidate identity",
+            r"project details remain in project artifacts and scoped sessions",
+            r"no private paths, credentials, model assumptions or runtime IDs in exports",
+            r"operational instructions.*English only",
         )
 
 
