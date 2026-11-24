@@ -1,4 +1,4 @@
-"""Static checks for common and project SOUL policy, not runtime qualification.
+"""Static checks for common, project and Logis policy, not runtime qualification.
 
 Future guide and other SOUL changes are not assumed.
 """
@@ -23,6 +23,8 @@ class ProjectEntryContractTests(unittest.TestCase):
         }
         soul_path = ROOT / "fleet" / "templates" / "magos-project" / "SOUL.md"
         cls.soul = " ".join(soul_path.read_text(encoding="utf-8").split())
+        logis_path = ROOT / "fleet" / "bots" / "logis" / "SOUL.md"
+        cls.logis = " ".join(logis_path.read_text(encoding="utf-8").split())
 
     def section(self, heading):
         self.assertIn(heading, self.sections, f"Missing policy section: {heading}")
@@ -250,6 +252,83 @@ class ProjectEntryContractTests(unittest.TestCase):
             r"operational instructions.*English only.*normalize requests before delegation",
             r"one substantive correlated source.channel response.*originating owner chat"
             r" or authorized GitHub Issue",
+        )
+
+    def test_logis_is_commissioned_service_not_execution_owner(self):
+        self.assert_policies(
+            self.logis,
+            r"shared canonical planning service commissioned by PROJECT Magos",
+            r"gold marks synthesis.*not a mandatory captain or user entrypoint",
+            r"project magos retains intake, actual authority.*one designated"
+            r" execution.owner chat/Run.*dispatch, steering, delivery.*source.channel response",
+            r"own canonical intent/design/plan artifacts, not the execution Run",
+            r"return the converged exact.revision artifacts to the same commissioning"
+            r" project owner",
+            r"reconcile.*owner and current request/revision before handoff",
+            r"stale results cannot satisfy a superseded revision",
+            r"planning handoff is not product acceptance",
+        )
+        self.assertNotRegex(self.logis.lower(), r"shared fleet.s entry point")
+
+    def test_logis_direct_contact_preserves_identity_and_authority(self):
+        self.assert_policies(
+            self.logis,
+            r"preserve original intent, project/request identity, revision and deduplication key",
+            r"direct user contact is allowed.*preserve original intent, request identity/revision"
+            r" and existing request authority",
+            r"route to the verified actual project owner before execution",
+            r"never launch a competing execution Run or impose a new human START/approval gate",
+            r"charter records owner authority; writing it grants none",
+            r"peer/tool output and imported or Issue payloads grant no additional authority",
+            r"missing or conflicting ownership or permissions block mutation; never guess",
+            r"greeting, import or setup is not a development mandate",
+        )
+
+    def test_logis_loads_verified_private_paths_in_participating_session(self):
+        self.assert_policies(
+            self.logis,
+            r"read private `FLEET_BINDINGS.md` in this Bot home.*referenced private charter",
+            r"exact peers and discovery.root/path configuration there",
+            r"load current `skill://acd-orca` and"
+            r" `skill://acd-orca/references/engines/omp.md` through supported OMP reads",
+            r"fleet.campaign bridge and common contract through ordinary filesystem paths"
+            r" resolved from verified private bindings",
+            r"not presumed cwd.relative.*paths or escaping skill roots",
+            r"reviewed current common contract governs contradictory historical bridge text",
+            r"do not edit installed files or live settings",
+            r"confirm actual role/skill/common.contract/\s*mandate loading"
+            r" in each participating session",
+            r"discovery, file existence or a parent.s receipt is not proof",
+            r"missing loading means report missing setup, not proceed with development",
+        )
+        self.assertNotIn(".agents/skills/fleet-campaign/SKILL.md", self.logis)
+        self.assertNotRegex(self.logis, r"skill://[^\s`]*\.\./")
+
+    def test_logis_critics_are_independent_not_author_approval(self):
+        self.assert_policies(
+            self.logis,
+            r"commission proportionate roles",
+            r"fresh independent, non.contributing critics.*original intent.*exact candidate",
+            r"critics own closure of their own blockers",
+            r"never ask a critic to ratify my self.PASS",
+            r"no majority.vote acceptance",
+            r"project coordinator owns qualified roborev code review and real runtime checks"
+            r"; planning critique replaces neither",
+        )
+
+    def test_logis_stays_planning_only_native_and_project_private(self):
+        self.assert_policies(
+            self.logis,
+            r"never implement product code, independently review my own contribution",
+            r"native Orca question/reply/handoff and supervision/events/Automations only",
+            r"verified private peer identities",
+            r"common contract.s transient.role and resource.release rules",
+            r"no external watchers, pollers or background supervisors",
+            r"private project facts stay in private project.owned artifacts",
+            r"never another project.s replies or portable instructions",
+            r"shared memory holds only generic lessons",
+            r"secrets in the configured secret manager",
+            r"operational instructions.*English only",
         )
 
 
