@@ -1,5 +1,9 @@
 # ACD native fleet full-auto execution charter
 
+> Public editorial note: This charter records historical authorization only, not a new-user
+> mandate or installation default. Environment-specific model identities are redacted for
+> privacy; original private evidence and verdicts remain unchanged.
+
 ## Active amendments take precedence
 
 [Amendment 1](AMENDMENT_01_ROBOREV.md) replaces OCR with qualified roborev/OMP.
@@ -58,8 +62,10 @@ A preserved uncommitted file and its hash are acceptable candidate identity; OCR
 mode can inspect tracked/untracked pilot changes after free preview confirms exact scope.
 
 All implementation uses OMP under native Orca workers, never Kanban coding/devops direct code
-writing. Select explicit verified `litellm/doctronic/azure/gpt-6-astra` main route (GLM exhausted).
-Project-only OMP judge/smol settings may reuse the already proven Qwen4 Max route in THESE
+writing. Select the explicitly verified campaign model route recorded in private bindings
+[environment-specific value redacted in this public copy]. The previous primary route was exhausted.
+Project-only OMP judge/smol settings may reuse the already proven auxiliary route recorded in
+private bindings [environment-specific value redacted in this public copy] in THESE
 new/test workspaces if needed; record backup and actual use, never mutate global provider config,
 existing Bot homes, permissions or secrets. Configuration presence alone is not qualification.
 A worker checks actual primary/auxiliary outcomes before claiming health. Do not launch a known

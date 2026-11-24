@@ -81,5 +81,74 @@ class HistoricalAmendmentPrivacyTests(unittest.TestCase):
                 self.assertNotRegex(self.text, pattern)
 
 
+class HistoricalCharterPrivacyTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (ROOT / "fleet/execution/fullauto/CHARTER.md").read_text(encoding="utf-8")
+        cls.flat = " ".join(cls.text.split())
+        cls.models = " ".join(cls.text.split("All implementation uses OMP", 1)[1]
+                              .split("## Native work DAG", 1)[0].split())
+
+    def test_historical_notice_is_not_new_authority_or_installation_default(self):
+        notice = " ".join(line.removeprefix("> ") for line in self.text.splitlines()
+                          if line.startswith("> "))
+        self.assertIn("historical authorization only, not a new-user mandate or installation default", notice)
+        self.assertIn("Environment-specific model identities are redacted for privacy", notice)
+        self.assertIn("original private evidence and verdicts remain unchanged", notice)
+
+    def test_model_choices_are_explicit_private_redactions_not_public_defaults(self):
+        redaction = "[environment-specific value redacted in this public copy]"
+        self.assertIn(
+            "Select the explicitly verified campaign model route recorded in private bindings " + redaction,
+            self.models,
+        )
+        self.assertIn("The previous primary route was exhausted.", self.models)
+        self.assertIn(
+            "Project-only OMP judge/smol settings may reuse the already proven auxiliary route recorded in "
+            "private bindings " + redaction + " in THESE new/test workspaces if needed",
+            self.models,
+        )
+        # Selection clauses above require private bindings; reject route literals and assignments too.
+        for pattern in (r"`[^`\s]+/[^`\s]+`", r"\b[\w.-]+(?:/[\w.-]+){2,}\b",
+                        r"(?i)\b(?:model|provider|default_model)\s*[:=]"):
+            with self.subTest(pattern=pattern):
+                self.assertNotRegex(self.models, pattern)
+
+    def test_model_health_and_mutation_boundaries_remain_explicit(self):
+        for boundary in (
+            "record backup and actual use, never mutate global provider config, existing Bot homes, permissions or secrets",
+            "Configuration presence alone is not qualification",
+            "A worker checks actual primary/auxiliary outcomes before claiming health",
+            "Do not launch a known exhausted primary or silently swap review provider",
+            "Missing Codex or invalid Hermes credentials are a parity boundary, not authority to install/sign in or fabricate compatibility",
+        ):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, self.models)
+
+    def test_historical_precedence_frozen_sources_and_evidence_gates_remain(self):
+        for boundary in (
+            "Historical OCR, four-hour and fully serial clauses below are superseded where explicitly stated in these amendments",
+            "Individual attempt limits, independent quality gates and scope protections remain",
+            "Do not commit Git changes",
+            "Both frozen planning trees remain read-only. Reverify before relying on them",
+            "a successful analysis with a FAIL/INCONCLUSIVE result must leave dependent product work unready",
+            "Only independent accepted review + tests may complete the gate",
+            "Never fabricate a transport error or claim an unexercised scenario passed",
+            "critical/high/medium block, partial/skipped/budget failure is INCONCLUSIVE",
+            "Unsupported fault injection stays UNTESTED with exact reason",
+            "Each doc/code attempt <=15min, checkpoint at10min, original clock survives retries",
+            "Total campaign horizon 4h from accepted handoff",
+            "states PASSED/BLOCKED/UNTESTED per requirement",
+        ):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, self.flat)
+        self.assertIn("`f964b5e9006132f04961450fbbc3d6e5a38b9139`", self.text)
+        self.assertIn("R2 candidate SHA-256: `89fa202f0d82ba2655e65a338e1eac2780a1e5d27cf5ce4771e18fcf934b629b`", self.text)
+        self.assertIn("S1 SPEC SHA-256: `f3fcb1f72c98f41e9a98f732a396610f00166ed62a3037d44f4f00bac6b7117d`", self.text)
+        for amendment in ("AMENDMENT_01_ROBOREV.md", "AMENDMENT_02_OVERNIGHT.md",
+                          "AMENDMENT_03_RUNTIME_RESUME.md"):
+            self.assertIn(f"]({amendment})", self.text)
+
+
 if __name__ == "__main__":
     unittest.main()
