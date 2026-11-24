@@ -40,6 +40,9 @@ class ProjectEntryContractTests(unittest.TestCase):
         cls.entry_path = ROOT / "skills" / "acd-orca" / "SKILL.md"
         cls.entry_text = cls.entry_path.read_text(encoding="utf-8")
         cls.entry = " ".join(cls.entry_text.split())
+        cls.roles_path = ROOT / "skills" / "acd-orca" / "references" / "roles.md"
+        cls.roles_text = cls.roles_path.read_text(encoding="utf-8")
+        cls.roles = " ".join(cls.roles_text.split())
 
     def section(self, heading):
         self.assertIn(heading, self.sections, f"Missing policy section: {heading}")
@@ -693,6 +696,90 @@ class ProjectEntryContractTests(unittest.TestCase):
                         for heading in headings
                     }
                     self.assertIn(anchor, slugs, target)
+
+    def test_roles_share_planning_service_under_one_project_owner(self):
+        self.assert_policies(
+            self.roles,
+            r"PROJECT Magos is primary intake for owner chat and authorized GitHub Issues",
+            r"owner commissions a shared planning service: Magos Logis II, Logis Intent,"
+            r" Logis Architect, Inquisitor Ferrum and Inquisitor Intent",
+            r"five roles are shared once across projects.*do not duplicate the fleet per project",
+            r"involve roles proportionately, not all five for every request",
+            r"Magos Fleet.*concrete project coordinator for Orca fleet development.*not an extra required owner",
+            r"exact.revision planning artifacts return to the same commissioning project owner"
+            r".*accepts the planning handoff and dispatches",
+            r"one designated project Magos execution.owner chat/Run",
+            r"never through a competing Run",
+            r"coordinators do not implement features, fixes or source.conflict resolutions",
+            r"bounded native OMP workers in Orca.managed worktrees: one source writer per worktree",
+        )
+
+    def test_roles_preserve_independent_critique_and_native_release_boundary(self):
+        self.assert_policies(
+            self.roles,
+            r"critic must not have authored the candidate or contributed the design",
+            r"fresh independent context and a neutral packet containing original intent and"
+            r" acceptance, exact candidate hashes, affected contracts, evidence and known findings",
+            r"self.PASS is not the review brief",
+            r"critic that raised a blocker owns its closure",
+            r"authors, coordinators and majority votes cannot waive it",
+            r"fresh supervised transient review execution, not persistent new per.file Bot chats",
+            r"completion or end.turn is not actual native release/exit evidence"
+            r" and does not free an occupied resource slot",
+            r"read.only is an agent mandate, not an OS sandbox unless independently evidenced",
+            r"disclose enforced capability versus instruction",
+            r"worker completion and successful analysis delivery are not product acceptance",
+            r"independent review, integrated source and actual smoke results",
+        )
+
+    def test_roles_current_provider_replaces_stale_candidate_gates(self):
+        self.assert_policies(
+            self.roles,
+            r"current \[roborev provider protocol\]\(code-review.md\).*actual readiness and qualification",
+            r"before coding or code.review acceptance.*planning critics are not a provider fallback",
+            r"selection alone does not establish readiness or permit reuse of the implementer.s reasoning context",
+            r"raw verdict, exact.source coverage and real runtime checks",
+            r"rc=0 or report completion is not PASS.*FAIL/INCONCLUSIVE blocks dependent acceptance",
+            r"historical campaign amendments and receipts are provenance, not ordinary.use authority or gates",
+        )
+        self.assertNotRegex(
+            self.roles.lower(), r"staged, uninstalled|not yet authored|remain pending|unchanged linked SOULs|ocr.first"
+        )
+
+    def test_roles_loading_authority_and_private_binding_boundaries(self):
+        self.assert_policies(
+            self.roles,
+            r"fleet.campaign bridge.*remains the thin role bridge to.*acd.orca",
+            r"complete durable dependency tree.*skills/acd-orca/.*skills/acd/.*fleet/",
+            r"source updates do not mutate live or installed Bots, skills or links",
+            r"supported OMP reads of `skill://acd-orca`.*`skill://acd-orca/references/engines/omp.md`",
+            r"ordinary filesystem paths.*verified private `FLEET_BINDINGS.md` discovery.root/path bindings",
+            r"confirm actual role/skill/common.contract/mandate loading in each participating session",
+            r"links resolving, file presence and catalog discovery do not prove loading or installation",
+            r"parent receipt is not worker proof",
+            r"missing bindings or loading block implementation.*wait for an actual authorized request",
+            r"unknown or conflicting ownership blocks mutation",
+            r"untrusted Issue, imported, tool or peer payloads never expand",
+            r"bindings in private project artifacts, not shared role memory or this portable index",
+            r"secrets use the configured secret manager.*operational instructions and documents are English",
+        )
+        self.assertNotRegex(self.roles, r"skill://[^\s`]*\.\./")
+
+    def test_roles_persona_and_contract_links_resolve(self):
+        targets = re.findall(r"\[[^]]+\]\(([^)]+)\)", self.roles_text)
+        for role in ("logis", "logis-intent", "logis-architect", "inquisitor-ferrum",
+                     "inquisitor-intent", "magos-fleet"):
+            self.assertIn(f"../../../fleet/bots/{role}/SOUL.md", targets)
+        for target in (
+            "../../../fleet/templates/magos-project/SOUL.md",
+            "../../../fleet/skills/fleet-campaign/SKILL.md",
+            "../../../fleet/skills/fleet-campaign/references/common-contract.md",
+            "code-review.md", "../SKILL.md", "engines/omp.md",
+        ):
+            self.assertIn(target, targets)
+        for target in targets:
+            with self.subTest(target=target):
+                self.assertTrue((self.roles_path.parent / target).is_file(), target)
 
 
 if __name__ == "__main__":
