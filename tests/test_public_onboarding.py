@@ -150,5 +150,96 @@ class HistoricalCharterPrivacyTests(unittest.TestCase):
             self.assertIn(f"]({amendment})", self.text)
 
 
+class PortableRuntimeReferenceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.path = ROOT / "skills/acd-orca/references/runtime-review-and-integration.md"
+        cls.text = cls.path.read_text(encoding="utf-8")
+        cls.flat = " ".join(cls.text.split())
+
+    def test_current_authority_and_scoped_readiness_replace_historical_constraints(self):
+        for boundary in (
+            "current portable procedure", "actual owner/project mandate",
+            "[skill entrypoint](../SKILL.md)",
+            "../../../fleet/skills/fleet-campaign/references/common-contract.md",
+            "Default substantive code review is roborev under the current skill/common contract",
+            "retain provenance only", "no new-user permissions, inherited no-commit prohibition",
+            "timer/budget/delivery constraints or private readiness prerequisites",
+            "Historical wording in linked references does not override this current runtime policy",
+            "actual scoped environment, configuration and source evidence",
+            "reuse valid same-scope receipts only, never inherited PASS",
+            "missing evidence does not authorize automatic paid probes",
+            "Readiness receipts never accept a product candidate",
+            "success proves only its recorded scope, not this user's qualification",
+        ):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, self.flat)
+        for obsolete in ("completion for the staged, uninstalled candidate",
+                         "The current [execution charter]", "remains uninstalled",
+                         "are approved future targets", "The current charter permits"):
+            self.assertNotIn(obsolete, self.flat)
+
+    def test_resources_original_deadlines_and_delivery_remain_mandate_bound(self):
+        for boundary in (
+            "before every affected dispatch, integration or acceptance-gate completion",
+            "persisted original attempt deadline and any non-null campaign cutoff",
+            "campaign cutoff is null when the actual mandate has none",
+            "null does not waive finite 15-minute source attempts, 10-minute checkpoints or 10-minute reviews",
+            "retries, wakes and fixes cannot reset the original clock",
+            "three occupied resource slots", "one source writer per worktree",
+            "count reviewers, runtime executors, fixes, remediation, conflict workers",
+            "unknown stop outcome still occupies custody and capacity",
+            "slots remain occupied until actual native release/exit evidence, not completion",
+            "stricter actual mandate limits win", "review freezes the candidate",
+            "independently mandated fix/retry ceilings", "original clocks survive fixes",
+            "default merge only to the explicitly bound branch when the mandate grants it",
+            "without a merge grant, do not merge",
+            "push, publication, deployment and installation each require separate authority",
+        ):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, self.flat.lower())
+
+    def test_exact_source_runtime_review_integration_and_cleanup_gates_survive(self):
+        for boundary in (
+            "named target branch and full starting SHA", "Task branches never merge directly into the original target",
+            "Record exclusive ownership before dispatch for files and shared APIs",
+            "Changed source, build, relevant configuration or scenario invalidates earlier applicable results",
+            "one active review per exact candidate/packet/scenario",
+            "original acceptance, shared contracts, exact base/candidate/diff, runtime/scenario evidence",
+            "critical/high/medium findings block", "zero-required coverage is INCONCLUSIVE",
+            "Reviewers never edit even temporarily, commit, merge, push or auto-fix",
+            "runtime retest and fresh exact-source review",
+            "Never quietly re-hash drift into approval",
+            "A failed smoke blocks dependents", "blocked native acceptance Task",
+            "authorized integration and actual post-integration smoke pass",
+            "A changed test scenario cannot inherit the old result",
+            "Preserve every acceptance failure", "Do not silently reset durable/published history",
+            "Unknown stop/release state blocks replacement and resource reuse",
+            "Dirty or untracked work must be rescued", "Protect source/worktrees used by active consumers",
+            "destructive cleanup still requires authority and settled ownership",
+        ):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, self.flat)
+
+    def test_existing_sections_and_reviewed_tree_links_resolve(self):
+        self.assertEqual(re.findall(r"^## (.+)$", self.text, re.MULTILINE), [
+            "Authority and admission", "Git topology", "Concurrency and resource exclusions",
+            "Exact candidate and stage ordering", "Runtime testing contract", "Independent review boundary",
+            "Task integration", "End of campaign", "Cleanup", "Sources and staged links",
+        ])
+        self.assertIn("part of the current tree, not unauthored/PENDING targets", self.flat)
+        self.assertIn("synthetic tabletops are not execution, cleanup, provider or engine qualification", self.flat)
+        for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", self.text):
+            with self.subTest(target=target):
+                filename, _, fragment = target.partition("#")
+                path = self.path.parent / filename
+                self.assertTrue(path.is_file(), target)
+                if fragment:
+                    headings = re.findall(r"^#+\s+(.+)$", path.read_text(encoding="utf-8"), re.MULTILINE)
+                    slugs = [re.sub(r"[^\w\s-]", "", heading.lower()).replace(" ", "-")
+                             for heading in headings]
+                    self.assertIn(fragment, slugs, target)
+
+
 if __name__ == "__main__":
     unittest.main()

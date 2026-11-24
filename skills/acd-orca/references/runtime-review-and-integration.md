@@ -1,10 +1,10 @@
 # Runtime testing, review and integration
 
-This reference owns topology, execution ordering, integration and source-preserving
-completion for the staged, uninstalled candidate. Read [roles](roles.md) for ownership
-and the [common fleet contract](../../../fleet/skills/fleet-campaign/references/common-contract.md)
-for shared policy. Coordinators supervise and validate receipts; they neither implement
-nor resolve source conflicts nor perform substantive code review.
+This current portable procedure owns topology, execution ordering, integration and
+source-preserving completion under the actual owner/project mandate, current
+[skill entrypoint](../SKILL.md) and [common fleet contract](../../../fleet/skills/fleet-campaign/references/common-contract.md).
+Read [roles](roles.md) for ownership. Coordinators supervise and validate receipts;
+they neither implement nor resolve source conflicts nor perform substantive code review.
 
 ## Authority and admission
 
@@ -12,26 +12,31 @@ Apply the actual mandate and [handoff admission](handoff.md#execution-admission)
 historical approval or fresh-session START ceremonies. An available command, successful
 worker report or provider-readiness receipt creates no delivery authority. Before every
 affected dispatch, integration or acceptance-gate completion, check actual UTC against
-the persisted original attempt deadline and campaign cutoff, current revision, pause
-state, ownership and permitted operations. No new affected work after expiry; a late
-native wake cannot renew the clock or prove an in-flight process exited. Use
+the persisted original attempt deadline and any non-null campaign cutoff, current revision,
+pause state, ownership and permitted operations. The campaign cutoff is null when the actual
+mandate has none; never inherit a historical campaign cutoff. Null does not waive finite
+15-minute source attempts, 10-minute checkpoints or 10-minute reviews; stricter mandates win.
+No new affected work after expiry; retries, wakes and fixes cannot reset the original clock.
+A late native wake cannot prove an in-flight process exited. Use
 [state and recovery](state-and-recovery.md#native-continuation-and-original-clocks)
 for native continuation and guarded settlement, never an external watcher or poller.
 
-The [owner amendment](../../../fleet/execution/fullauto/AMENDMENT_01_ROBOREV.md) selects
-roborev instead of historical OCR prescriptions in the unchanged legacy and shared
-sources. [Code review](code-review.md) owns the qualified interface and fail-closed
-provider contract. That replacement does not relax independence, complete coverage,
-source/scenario binding, runtime testing or source retention. Older document snapshots
-may retain pending readiness language; accepted scoped qualification receipts, not an
-old label, establish actual readiness. They never accept a product candidate.
+Default substantive code review is roborev under the current skill/common contract, not an
+author's amendment. [Code review](code-review.md) owns the qualified interface and fail-closed
+provider contract. Preserve independence, complete coverage, source/scenario binding, runtime
+testing and source retention. Readiness requires actual scoped environment, configuration and
+source evidence; reuse valid same-scope receipts only, never inherited PASS. Historical success
+is not this user's qualification, and missing evidence does not authorize automatic paid probes.
+Readiness receipts never accept a product candidate.
 
-The current [execution charter](../../../fleet/execution/fullauto/CHARTER.md) forbids
-commits, staging, push, PR, merge-to-main, installation and deployment. Its delivery is
-durable local source plus attributable diffs, immutable manifests and a checksummed
-archive. The committed integration route below is conditional on an actual mandate
-that authorizes those operations; it is not permission to create a commit for review.
-An absent merge grant changes the integration operation, not the review/smoke gate.
+The historical [owner amendment](../../../fleet/execution/fullauto/AMENDMENT_01_ROBOREV.md) and
+[execution charter](../../../fleet/execution/fullauto/CHARTER.md) retain provenance only.
+They supply no new-user permissions, inherited no-commit prohibition, timer/budget/delivery
+constraints or private readiness prerequisites. Historical wording in linked references does
+not override this current runtime policy, the current skill/common contract or actual mandate.
+Commit and integration operations require actual authority; do not create a commit merely for
+review. Default MERGE only to the explicitly bound branch when the mandate grants it; without
+a merge grant, do not merge. That changes the integration operation, not the review/smoke gate.
 Keep actual identities, host paths and model routes in private project records.
 
 ## Git topology
@@ -68,18 +73,18 @@ ownership outcomes block duplicate starts under the recovery contract.
 
 ## Concurrency and resource exclusions
 
-The global campaign ceiling is **three simultaneously active coding agents**, including
-fix, remediation and conflict-resolution workers across all worktrees and any permitted
-nested assignments. No hidden fanout or extra quota per wave/worktree. A possibly live
-writer with an unknown stop outcome still occupies custody and capacity until reconciled.
+The global campaign ceiling is **three occupied resource slots**, normally one writer plus
+one reviewer across candidate-separated scopes, with **one source writer per worktree**.
+Count reviewers, runtime executors, fixes, remediation, conflict workers and any permitted
+nested assignments across all worktrees; no hidden fanout or extra quota per wave/worktree.
+A possibly live worker with an unknown stop outcome still occupies custody and capacity until
+reconciled. Slots remain occupied until actual native release/exit evidence, not completion.
 A plan does not authorize helper workers merely because spare capacity exists.
 
-Stricter charter limits win. The current charter permits at most **two paid workers**
-concurrently across the campaign, serial one-file document authors and **one writer or
-one independent review at a time per worktree**. Review freezes the candidate: no source
-mutation alongside review, including an author's small fix. Separate read-only review
-storage does not authorize an unfrozen writer or a second review of that candidate.
-Runtime executors and reviewers still consume any applicable total-worker/resource caps.
+Stricter actual mandate limits win; historical two-paid-worker and one-file campaign limits
+are not universal restrictions. Review freezes the candidate: no source mutation alongside
+review, including an author's small fix. Separate read-only review storage does not authorize
+an unfrozen writer or a second review of that candidate. Preserve all resource exclusions.
 
 Record exclusive ownership before dispatch for files and shared APIs, schemas and
 migration order, manifests/lockfiles, build outputs, ports, fixture data, databases and
@@ -167,8 +172,10 @@ acceptance, shared contracts, exact base/candidate/diff, runtime/scenario eviden
 known findings. No expected verdict, reassuring author summary or implementer transcript.
 A fresh independent context on the same model does not imply diverse failure modes.
 
-Use the actual scoped **roborev 0.75.0 to OMP 19.1.1 native ACP** qualification only within
-its accepted environment/configuration bounds. Follow [code-review admission](code-review.md#freeze-and-free-scope-preview)
+Historical **roborev 0.75.0 to OMP 19.1.1 native ACP** success proves only its recorded scope,
+not this user's qualification. Require actual scoped environment/configuration/source evidence
+for the selected interface; reuse receipts only while those bindings remain valid. No inherited
+PASS or automatic paid qualification probe. Follow [code-review admission](code-review.md#freeze-and-free-scope-preview)
 for the external free scope preview and immutable no-hooks review-only snapshot outside
 the live checkout, fresh private config/session and original source mapping. No live
 checkout target, automatic fixes, hook/global changes, resumed author context or silent
@@ -192,11 +199,12 @@ bindings/coverage and derives gates; substantive source judgment stays with the 
 
 FAIL goes to the implementation worker, then runtime retest and fresh exact-source review.
 Preserve the initial FAIL, fix handoff, retest and new verdict before disposal. Productive
-iterations are bounded by the actual charter, not an unlimited legacy loop. The current
-limits are one slice defect-fix round, two feature-integration fix rounds and at most two
-unproductive attempts; original clocks survive fixes. Apply the exact attempt, review,
-concurrency and spend constraints in [handoff bounds](handoff.md#handoff-packet) and
-[review bounds](code-review.md#bounded-invocation). Unsupported token/effort controls need
+iterations and independently mandated fix/retry ceilings are governed by the actual bound
+mandate and current contracts, not an unlimited legacy loop or universal historical campaign
+limits. Original clocks survive fixes. Apply finite source/checkpoint/review bounds above and
+the admitted concurrency/spend constraints through [handoff bounds](handoff.md#handoff-packet)
+and [review bounds](code-review.md#bounded-invocation); historical numerical restrictions in
+those references do not override current policy. Unsupported token/effort controls need
 explicit bounded reconciliation before admission, not invented flags or dropped limits.
 Exhausted bounds or unchanged provider/permission failure stops the affected path.
 
@@ -274,8 +282,8 @@ INCONCLUSIVE analysis, provider-readiness result or document verdict cannot open
 
 Push, publication, deployment and installation each require separate authority. A merge
 is not user delivery: when packaged/installable delivery is actually requested and
-authorized, runtime acceptance must exercise that deliverable. The current staged candidate
-remains uninstalled; do not repoint existing skill/SOUL loading paths or alter legacy files.
+authorized, runtime acceptance must exercise that deliverable. Do not repoint loading paths,
+alter legacy files or change installed consumers without separately authorized scope.
 
 ## Cleanup
 
@@ -299,8 +307,8 @@ Dirty or untracked work must be rescued to durable authorized storage or cleanup
 Do not discard another owner's changes, run broad clean/reset or force-delete a branch
 because Git calls a squash source unmerged. Prove the squash receipt, resulting tree and
 smoke, preserve recovery material when needed, then use only precisely scoped authorized
-cleanup. The current charter also retains the original feature worktree and source used
-by live Bots; successful pilot cleanup cannot remove either.
+cleanup. Protect source/worktrees used by active consumers and resources retained for diagnosis
+or ongoing work; successful cleanup of a disposable scope cannot authorize removing either.
 
 Mark cleanup complete only after verified actual actions, never a promised removal.
 Remove only obsolete owned native timers and ignore queued late wakes under the recovery
@@ -313,12 +321,12 @@ expire, while destructive cleanup still requires authority and settled ownership
 The [obligation ledger](obligation-ledger.md#reference-obligations) maps legacy entrypoint
 sections 8-10 and 13 and the [legacy runtime reference](../../acd/references/runtime-review-and-integration.md)
 to this document. Retain their safety guarantees, not obsolete START, provider-fallback,
-watcher or unbounded-loop mechanics. The ledger's historical pending provider filename
-requires its separately owned amendment; it does not override `code-review.md`.
+watcher or unbounded-loop mechanics. Historical pending labels are provenance, not current
+readiness prerequisites; the current skill/common and code-review contracts govern.
 
 [Orca runtime](orca-runtime.md), [task template](../templates/TASK.md),
 [TODO template](../templates/TODO.md) and [validation tabletops](validation-tabletop.md)
-are approved future targets, **PENDING** until authored and checked. Final cross-document
-validation must resolve every link, reconcile template/source/scenario/gate fields and
-bind independent review to the current complete candidate. Static document checks and
+are part of the current tree, not unauthored/PENDING targets. Check the actual reviewed tree:
+resolve every link, reconcile template/source/scenario/gate fields and bind independent review
+to the current complete candidate. Static document checks and
 synthetic tabletops are not execution, cleanup, provider or engine qualification.
