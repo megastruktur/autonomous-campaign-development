@@ -38,6 +38,12 @@ Updating the shared skill is **not migration of existing Bots**. Inspect each ac
 identity, role and designated Home Chat: its pinned bridge, reviewed SOUL and private bindings
 must match the reviewed version. Respect protected SOUL interactive approval; shell approval
 variables do not bypass it. Preserve useful existing campaigns; do not stop them indiscriminately.
+An existing per-Bot bridge may be a regular copied directory with old policy, not a symlink.
+Compare its actual type, contents and customizations; retain private backups and exact prior
+link targets. Stage the complete reviewed tree and obtain scoped migration approval before
+changing owned paths. Do not run the fresh installer over it or delete/replace blindly.
+Use the [operations update/rollback guidance](OPERATIONS.md); directory migration needs its own
+approved preservation plan, not the symlink-only rollback procedure.
 
 Download without enabling instructions. These network commands are owner-run, not exercised
 by the offline tests. Run in Bash; an existing destination (including dangling links) stops:
@@ -217,6 +223,9 @@ commands, model, limits and charter. Run binding and successful review readiness
 before coding dispatch. GitHub is optional; unset credentials never belong here. The charter
 records allowed paths/actions, exclusions, request/revision/dedup identity and delivery authority;
 it cannot create permission. Unknown or conflicting bindings block mutation.
+Record actual native execution project/repository/host placement; never infer it from the desktop.
+Record observed native launch/execution bounds separately from prose budgets; instruction limits
+are not proof of enforcement. Reconcile unknown or conflicting bounds before execution.
 
 Each shared Bot's home has one binding index with its role/source/peer records and a map such
 as `projects: {project-a: /path/to/private/project-a/BINDINGS.md, project-b: /path/to/private/project-b/BINDINGS.md}`.
@@ -245,6 +254,10 @@ The legitimate owner sends this single setup-only bootstrap/reread prompt in eac
 `no_active_sender_terminal` means **activation-pending**, not successful loading. Ask the owner
 to send the prompt above in the existing Home Chat; do not forge `--from` or create a new chat
 or coordinator as a workaround. Loading evidence must come from that Bot's own session.
+Report **configured**, **actually loaded**, **peer-admitted** and **exercised** status separately.
+A successful main response/loading does not prove unattended health. Inspect each enabled
+auxiliary-purpose result separately; disclose failures or unknown status without automatic paid
+probing or model/settings changes. Unexercised capabilities remain unverified.
 
 ## 5. Establish review readiness, then one tiny native smoke
 
@@ -272,7 +285,10 @@ The supported review shape, after admission, is `roborev review --local --dirty 
 Use a separate frozen no-hooks snapshot and private data/temp/session directories as the contract
 requires; never aim local review at the live checkout merely to try it. No OCR fallback.
 
-Authorize a bounded tiny clean fixture and a known-defect fixture in disposable storage.
+For the needed candidate scope, reuse applicable same-environment review evidence, including the
+complete private isolation/configuration and qualification receipt, not just the sample above.
+Only missing scope needs authorized qualification, not an arbitrary whole-project ritual:
+authorize a bounded tiny clean fixture and a known-defect fixture in disposable storage.
 Require clean acceptance and detection of the known defect, complete source/read coverage,
 raw verdict, actual model/tool/provider completion and unchanged reviewed bytes. Error/refusal
 must remain failure or INCONCLUSIVE; rc=0 is not PASS. Record your own readiness scope privately.
@@ -296,6 +312,10 @@ These UI/auth/provider/native paths are user-run acceptance steps, **not tested 
 static/offline tests**. No whole validator campaign is required.
 
 ## 6. Use the project Bot
+
+A later explicit feature mandate may authorize a bounded private charter/bindings revision:
+record goal, acceptance, paths/actions, budget, delivery and same-owner request/revision/dedup.
+That revision cannot manufacture runtime permissions or override peers' separately authorized scope.
 
 Now send the authorized request to PROJECT Magos. It commissions Logis; you do not manually
 handoff. For example: “Add CSV export, reuse existing patterns, run the named business scenario;

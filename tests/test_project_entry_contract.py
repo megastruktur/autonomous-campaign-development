@@ -842,6 +842,12 @@ class SetupGuideTests(unittest.TestCase):
             "pinned bridge, reviewed SOUL and private bindings must match the reviewed version",
             "Respect protected SOUL interactive approval; shell approval variables do not bypass it",
             "Preserve useful existing campaigns; do not stop them indiscriminately",
+            "regular copied directory with old policy, not a symlink",
+            "Compare its actual type, contents and customizations",
+            "retain private backups and exact prior link targets",
+            "Stage the complete reviewed tree and obtain scoped migration approval",
+            "Do not run the fresh installer over it or delete/replace blindly",
+            "directory migration needs its own approved preservation plan",
         ):
             self.assertIn(boundary, update)
         admission = " ".join(self.text.split("Each shared Bot's home", 1)[1]
@@ -893,6 +899,34 @@ class SetupGuideTests(unittest.TestCase):
             "not tested by this guide's static/offline tests",
         ):
             self.assertIn(boundary, flat)
+
+    def test_readiness_separates_health_enforcement_and_candidate_scope(self):
+        flat = " ".join(self.text.split())
+        for boundary in (
+            "actual native execution project/repository/host placement; never infer it from the desktop",
+            "native launch/execution bounds separately from prose budgets",
+            "instruction limits are not proof of enforcement",
+            "Reconcile unknown or conflicting bounds before execution",
+            "**configured**, **actually loaded**, **peer-admitted** and **exercised** status separately",
+            "successful main response/loading does not prove unattended health",
+            "Inspect each enabled auxiliary-purpose result separately",
+            "disclose failures or unknown status without automatic paid probing or model/settings changes",
+            "Unexercised capabilities remain unverified",
+            "needed candidate scope, reuse applicable same-environment review evidence",
+            "complete private isolation/configuration and qualification receipt, not just the sample",
+            "Only missing scope needs authorized qualification, not an arbitrary whole-project ritual",
+        ):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, flat)
+
+    def test_feature_mandate_can_revise_records_but_not_grant_peer_permissions(self):
+        use = " ".join(self.text.split("## 6.", 1)[1].split())
+        for boundary in (
+            "explicit feature mandate may authorize a bounded private charter/bindings revision",
+            "goal, acceptance, paths/actions, budget, delivery and same-owner request/revision/dedup",
+            "cannot manufacture runtime permissions or override peers' separately authorized scope",
+        ):
+            self.assertIn(boundary, use)
 
     def run_block(self, block, home, **extra):
         env = os.environ.copy()
