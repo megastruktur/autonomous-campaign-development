@@ -34,6 +34,9 @@ class ProjectEntryContractTests(unittest.TestCase):
         fleet_path = ROOT / "fleet" / "bots" / "magos-fleet" / "SOUL.md"
         cls.fleet_text = fleet_path.read_text(encoding="utf-8")
         cls.fleet = " ".join(cls.fleet_text.split())
+        intent_path = ROOT / "fleet" / "bots" / "logis-intent" / "SOUL.md"
+        cls.intent_text = intent_path.read_text(encoding="utf-8")
+        cls.intent = " ".join(cls.intent_text.split())
 
     def section(self, heading):
         self.assertIn(heading, self.sections, f"Missing policy section: {heading}")
@@ -546,6 +549,53 @@ class ProjectEntryContractTests(unittest.TestCase):
             r"pause stops new dispatch/integration.*cancellation needs guarded stop receipts",
             r"late wakes cannot resume owner pause or settled work",
             r"credentials in the secret manager.*private project context may not",
+            r"operational instructions.*English only",
+        )
+
+    def test_intent_contribution_route_preserves_direct_request_authority(self):
+        self.assert_policies(
+            self.intent,
+            r"default contribution requests come from PROJECT Magos via Magos Logis II.s"
+            r" canonical synthesis",
+            r"direct captain approaches remain welcome.*preserve original intent,"
+            r" request/revision identity and existing authority",
+            r"route to the verified bound project owner before execution",
+            r"never launch a competing execution Run or require a Logis.first user entry"
+            r" or new routine human START gate",
+            r"missing or conflicting owner bindings block mutation",
+            r"native Orca questions/replies.*preserve project/request/revision identity",
+        )
+
+    def test_intent_remains_contributor_not_canonical_author_or_critic(self):
+        self.assert_policies(
+            self.intent,
+            r"own a product.planning contribution, not the final plan or execution",
+            r"cannot create authorization by writing a charter or independently approve"
+            r" artifacts containing my own contribution",
+            r"Magos Logis II owns synthesis.*critics independently inspect the resulting candidate",
+            r"self.check is not an independent critique",
+            r"no implementation, scope expansion, unilateral canonical edits or routine approval stops",
+        )
+
+    def test_intent_preserves_layout_persona_bridge_and_setup_boundaries(self):
+        self.assertEqual(
+            re.findall(r"^## (.+)$", self.intent_text, re.MULTILINE),
+            [
+                "Identity", "Mission", "Inputs and Context", "Ownership and Authority",
+                "Collaboration", "Operating Principles", "Outputs and Completion",
+                "Boundaries and Escalation", "Memory and Portability", "Communication",
+            ],
+        )
+        self.assert_policies(
+            self.intent,
+            r"shared fleet.s product planner.*Cyan marks attentive observation",
+            r"read `.agents/skills/fleet-campaign/SKILL.md`, its common.contract reference",
+            r"FLEET_BINDINGS.md.*in this Bot home.*project charter",
+            r"installation or a first greeting authorizes setup only, not a campaign",
+            r"respect access, budget and security constraints",
+            r"no external watcher, timer script or orchestration service",
+            r"shared memory contains reusable product lessons only",
+            r"local paths, peer IDs, engine settings and secrets are not part of this portable identity",
             r"operational instructions.*English only",
         )
 
