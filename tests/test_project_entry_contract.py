@@ -794,15 +794,15 @@ class SetupGuideTests(unittest.TestCase):
         cls.blocks = re.findall(r"^```bash\n(.*?)^```", cls.text, re.MULTILINE | re.DOTALL)
 
     def test_guide_covers_owner_setup_and_current_readiness(self):
-        self.assertLessEqual(len(self.text.splitlines()), 300)
+        self.assertLessEqual(len(self.text.splitlines()), 340)  # About 320, with safety guidance room.
         flat = " ".join(self.text.split())
         for marker in (
             "Start from scratch", "name/purpose", "Change", "Create",
             "orca bot list --json", "orca bot chats --bot", "FLEET_BINDINGS.md",
             "owner_chat:", "owner_run:", "target_branch:", "request_state:",
-            "projects: {cutecare:", "same request/revision", "known-defect fixture",
+            "projects: {project-a:", "same request/revision", "known-defect fixture",
             "completion wake", "native release/exit", "No merge/push/deploy",
-            "CuteCare", "Machina", "master", "manually attaches external connectors",
+            "project-a", "project-b", "master", "manually attaches external connectors",
             "skill://acd-orca/references/engines/omp.md", "read_only_mode = \"plan\"",
             "not tested by this guide", "compare", "backup", "approval",
         ):
@@ -811,6 +811,88 @@ class SetupGuideTests(unittest.TestCase):
         for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", self.text):
             if not target.startswith("https://"):
                 self.assertTrue((self.path.parent / target).is_file(), target)
+
+    def test_project_examples_share_generic_identity_and_discovered_branch(self):
+        bindings = re.search(r"^```yaml\n(.*?)^```", self.text, re.MULTILINE | re.DOTALL).group(1)
+        for field, value in (
+            ("project", "project-a"), ("repository", "/path/to/project-a"),
+            ("target_branch", "<discovered-authorized-branch>"),
+            ("charter", "/path/to/private/project-a/CHARTER.md"),
+            ("request_state", "/path/to/private/project-a/REQUESTS.md"),
+        ):
+            self.assertRegex(bindings, rf"(?m)^{field}: {re.escape(value)}$")
+        project_map = re.search(r"`projects: \{([^}]+)\}`", self.text).group(1)
+        self.assertEqual(dict(entry.split(": ", 1) for entry in project_map.split(", ")), {
+            "project-a": "/path/to/private/project-a/BINDINGS.md",
+            "project-b": "/path/to/private/project-b/BINDINGS.md",
+        })
+        examples = re.findall(
+            r"^- \*\*([^:]+):\*\* repository `([^`]+)`, example target `([^`]+)`",
+            self.text, re.MULTILINE,
+        )
+        self.assertEqual(examples, [("project-a", "/path/to/project-a", "main"),
+                                    ("project-b", "/path/to/project-b", "master")])
+        self.assertIn("Discover and verify the actual authorized target branch; never assume", self.text)
+        self.assertIn("Both branch names below are examples, not defaults", self.text)
+
+    def test_updates_require_bot_migration_and_peer_side_authority(self):
+        update = " ".join(self.text.split("## 2.", 1)[1].split("## 3.", 1)[0].split())
+        for boundary in (
+            "not migration of existing Bots", "identity, role and designated Home Chat",
+            "pinned bridge, reviewed SOUL and private bindings must match the reviewed version",
+            "Respect protected SOUL interactive approval; shell approval variables do not bypass it",
+            "Preserve useful existing campaigns; do not stop them indiscriminately",
+        ):
+            self.assertIn(boundary, update)
+        admission = " ".join(self.text.split("Each shared Bot's home", 1)[1]
+                             .split("The legitimate owner", 1)[0].split())
+        for boundary in (
+            "never overwrite one project's bindings with another's",
+            "Each participating shared peer must explicitly admit the same project/repository",
+            "owner, authorized request/revision and private charter, readable by that peer",
+            "Owner-side bindings alone are insufficient",
+            "Shared-peer changes need separately authorized scope", "preserve other projects",
+            "unknown/refused project or stale bootstrap exclusions",
+            "stop until authorized correction; never bypass the refusal",
+        ):
+            self.assertIn(boundary, admission)
+
+    def test_owner_reread_prompt_requires_own_loading_evidence_not_runtime(self):
+        setup = self.text.split("## 4.", 1)[1].split("## 5.", 1)[0]
+        prompts = re.findall(r"(?:^>.*\n)+", setup, re.MULTILINE)
+        self.assertEqual(len(prompts), 1, "One copyable install-only prompt")
+        prompt = " ".join(line.removeprefix("> ") for line in prompts[0].splitlines())
+        for boundary in (
+            "actual Bot identity, role and designated Home Chat", "actual SOUL and private bindings",
+            "full `skill://acd-orca` body", "skill://acd-orca/references/engines/omp.md",
+            "bound filesystem bridge/common contract",
+            "fresh own-session read-tool evidence of loaded source paths and revision/hash",
+            "catalog listing, inherited/parent receipt or self-ack does not prove loading",
+            "permission limits and missing setup", "within authorized scope",
+            "protected SOUL interactive approval", "No development, no new Run or coordinator",
+            "no silent permissions changes during install", "This is not native smoke",
+        ):
+            self.assertIn(boundary, prompt)
+        flat = " ".join(setup.split())
+        for boundary in (
+            "legitimate owner sends", "existing designated Home Chat", "also for initial setup",
+            "`no_active_sender_terminal` means **activation-pending**, not successful loading",
+            "Ask the owner to send the prompt above in the existing Home Chat",
+            "do not forge `--from` or create a new chat or coordinator as a workaround",
+            "Loading evidence must come from that Bot's own session",
+        ):
+            self.assertIn(boundary, flat)
+
+    def test_private_records_and_platform_examples_do_not_claim_qualification(self):
+        flat = " ".join(self.text.split())
+        for boundary in (
+            "Ignore rules alone are not privacy proof", "keep private files outside tracked source",
+            "Linux execution host with Bash/GNU tools, not the desktop client OS",
+            "Native Windows/macOS and WSL adaptations are not qualified merely by these examples",
+            "Bind/create a Run only through the installed native orchestration guide when the smoke is explicitly authorized",
+            "not tested by this guide's static/offline tests",
+        ):
+            self.assertIn(boundary, flat)
 
     def run_block(self, block, home, **extra):
         env = os.environ.copy()
