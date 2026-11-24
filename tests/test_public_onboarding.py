@@ -1,5 +1,8 @@
 """Public historical-document contracts, not runtime or reconstructed-history proof."""
 
+import copy
+import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -351,7 +354,7 @@ class InstallAgentGuideTests(unittest.TestCase):
         ) if block.startswith("# transition-owned-link"))
 
     def test_installation_scope_migration_and_private_admission_contract(self):
-        self.assertLessEqual(len(self.text.splitlines()), 220)
+        self.assertLessEqual(len(self.text.splitlines()), 255)  # Includes mandatory concrete template preflight.
         for boundary in (
             "instruction stack, not a daemon or product installer",
             "public HTTPS repository without GitHub login", "inspect actual path types, resolved parents, ownership",
@@ -578,6 +581,152 @@ class PortableCodeReviewTests(unittest.TestCase):
                     slugs = [re.sub(r"[^\w\s-]", "", heading.lower()).replace(" ", "-")
                              for heading in headings]
                     self.assertIn(fragment, slugs, target)
+
+
+class TemplateInstantiationPreflightTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.guide = (ROOT / "docs/INSTALL_AGENT.md").read_text(encoding="utf-8")
+        cls.templates = ROOT / "skills/acd-orca/templates"
+        cls.originals = {name: (cls.templates / name).read_bytes()
+                         for name in ("PLAN.md", "HANDOFF.md", "TASK.md", "TODO.md", "STATE.json")}
+        cls.state = json.loads(cls.originals["STATE.json"])
+        cls.mapping = dict(re.findall(r"^\| (PLAN.md|HANDOFF.md|TASK.md|TODO.md) \| (.+) \|$",
+                                     cls.guide, re.MULTILINE))
+        table = cls.guide.split("| STATE.json exact paths", 1)[1].split("Retain `_template`", 1)[0]
+        cls.paths = [path for cell in re.findall(r"^\| (`[^|]+) \|", table, re.MULTILINE)
+                     for path in re.findall(r"`([^`]+)`", cell)]
+
+    def field(self, state, path):
+        value = state
+        for key in path.split("."):
+            value = value[key]
+        return value
+
+    def synthetic_mandate(self, cutoff):
+        # Explicit synthetic inputs, not qualification or authorization of a live project.
+        state = copy.deepcopy(self.state)
+        state.pop("_template")
+        state["owner"]["private_record"] = "private/project-a/OWNER.md"
+        state["campaign"].update(name="project-a", prefix="pa", original_target_branch="feature/example",
+                                 repository_private_record="private/project-a/REPOSITORY.md",
+                                 starting_sha=hashlib.sha1(b"synthetic-source").hexdigest(),
+                                 resource_exclusions_evidence_id="synthetic-three-occupied-slots")
+        state["authority"].update(mandate_revision="synthetic-1", mandate_evidence_id="synthetic-mandate",
+                                  execution_authorized=True, commits_authorized=True,
+                                  final_merge_authorized=False, installation_authorized=False)
+        state["models"]["review_engine"] = "roborev"
+        state["models"]["code_review"].update(execution_engine="omp", requested="synthetic-model",
+                                              resolved="synthetic-model", actual=None,
+                                              qualification_status=None,
+                                              host_private_record="private/project-a/HOST.md")
+        bounds = state["bounds"]
+        bounds.update(campaign_cutoff_utc=None, campaign_cutoff_disposition=cutoff,
+                      campaign_cutoff_authority={"path": "private/project-a/MANDATE.md",
+                          "sha256": hashlib.sha256(b"synthetic explicit no total cutoff").hexdigest(),
+                          "section": "Synthetic scope", "scope": "project-a only"} if cutoff == "absent_by_authority" else None,
+                      slice_effort=None, slice_token_limit=None, final_effort=None, final_token_limit=None,
+                      spend_reconciliation_evidence_id="synthetic-bounded-spend-disposition",
+                      max_unproductive_attempts=1, max_slice_defect_fix_rounds=1,
+                      max_feature_integration_fix_rounds=1, max_paid_working_agents=2,
+                      max_coding_agents=2, feature_integration_fix_rounds_used=0,
+                      private_original_clocks_record="private/project-a/CLOCKS.md")
+        task = copy.deepcopy(self.state["_template"]["collection_shapes"]["tasks"])
+        task["attempt"].update(started_at="2030-01-01T00:00:00Z", checkpoint_due_at="2030-01-01T00:10:00Z",
+                               deadline_at="2030-01-01T00:15:00Z", original_clock_evidence_id="synthetic-clock")
+        state["tasks"] = [task]
+        if cutoff == "unknown":
+            state["authority"]["execution_authorized"] = None
+            state["outcome"] = "blocked"
+            state["next_action"] = "Resolve required execution/cutoff authority; no dispatch."
+        return state
+
+    def assert_emitted_matches(self, directory, mandate):
+        emitted = json.loads((directory / "STATE.json").read_text())
+        self.assertNotIn("_template", emitted)
+        for path in self.paths:
+            self.assertEqual(self.field(emitted, path), self.field(mandate, path), path)
+        self.assertFalse(emitted["execution_admission"]["admitted"])
+        for name, selectors in self.mapping.items():
+            text = (directory / name).read_text()
+            for selector in re.findall(r"`([^`]+)`", selectors):
+                self.assertNotIn(selector, text)
+            self.assertIn("Synthetic mandate: commits allowed; merge/install denied; preserve source and independent review.", text)
+            self.assertIn("FAIL", text)  # Remaining acceptance gates were not replaced wholesale.
+            record = json.loads(re.search(r"```json\n(.*?)\n```", text, re.DOTALL).group(1))
+            self.assertEqual(record, {path: self.field(mandate, path) for path in self.paths})
+
+    def test_actual_private_copies_follow_guide_mapping_and_reject_stale_values(self):
+        self.assertEqual(set(self.mapping), {"PLAN.md", "HANDOFF.md", "TASK.md", "TODO.md"})
+        self.assertGreaterEqual(len(self.paths), 25)
+        for path in self.paths:
+            self.field(self.state, path)  # Every documented path must exist in the real template.
+        mandate = self.synthetic_mandate("absent_by_authority")
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            for name, selectors in self.mapping.items():
+                text = self.originals[name].decode()
+                # Scoped fixture applies the guide's selectors to real paragraph/table blocks.
+                blocks = text.split("\n\n")
+                for selector in re.findall(r"`([^`]+)`", selectors):
+                    self.assertIn(selector, text, name)
+                needles = re.findall(r"`([^`]+)`", selectors)
+                reconciled = ("Synthetic mandate: commits allowed; merge/install denied; preserve source and independent review.\n"
+                              "Project project-a; target feature/example; source and authority in mapped record below.\n"
+                              "Three occupied slots; one writer/worktree; native release only; finite 900/600/600 bounds.\n"
+                              "Use declared one-attempt/fix ceilings and bounded spend disposition, not inherited token limits.\n"
+                              "No total cutoff by synthetic authority; original attempt times do not reset; no readiness PASS.")
+                blocks = [reconciled if any(needle in " ".join(block.split()) for needle in needles) else block
+                          for block in blocks]
+                # First record is a machine-readable reconciliation of the guide's exact mapped fields.
+                mapped = {path: self.field(mandate, path) for path in self.paths}
+                (directory / name).write_text("```json\n" + json.dumps(mapped) + "\n```\n\n" + "\n\n".join(blocks))
+            state_path = directory / "STATE.json"
+            state_path.write_text(json.dumps(mandate))
+            self.assert_emitted_matches(directory, mandate)
+            for path in ("bounds.campaign_cutoff_authority", "bounds.slice_token_limit", "bounds.max_unproductive_attempts"):
+                stale = copy.deepcopy(mandate)
+                parent, key = path.split(".")
+                stale[parent][key] = self.field(self.state, path)
+                state_path.write_text(json.dumps(stale))
+                with self.subTest(stale=path), self.assertRaises(AssertionError):
+                    self.assert_emitted_matches(directory, mandate)
+            state_path.write_text(json.dumps(mandate))
+            plan = directory / "PLAN.md"
+            plan.write_text(plan.read_text() + "\nFor the current no-commit mandate\n")
+            with self.assertRaises(AssertionError):
+                self.assert_emitted_matches(directory, mandate)
+        for name, original in self.originals.items():
+            self.assertEqual((self.templates / name).read_bytes(), original)
+
+    def test_unknown_cutoff_is_not_explicit_absence_and_clocks_stay_finite(self):
+        for disposition in ("unknown", "absent_by_authority"):
+            mandate = self.synthetic_mandate(disposition)
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "STATE.json"
+                path.write_text(json.dumps(mandate))
+                record = json.loads(path.read_text())
+                self.assertIsNone(record["bounds"]["campaign_cutoff_utc"])
+                self.assertEqual(record["bounds"]["campaign_cutoff_disposition"], disposition)
+                self.assertEqual([record["bounds"][key] for key in
+                                  ("attempt_budget_seconds", "checkpoint_due_seconds", "review_budget_seconds")], [900, 600, 600])
+                self.assertEqual(record["tasks"][0]["attempt"], mandate["tasks"][0]["attempt"])
+                if disposition == "unknown":
+                    self.assertIsNone(record["authority"]["execution_authorized"])
+                    self.assertEqual(record["outcome"], "blocked")
+                    self.assertIsNone(record["bounds"]["campaign_cutoff_authority"])
+                else:
+                    self.assertTrue(record["bounds"]["campaign_cutoff_authority"]["sha256"])
+                stale = copy.deepcopy(record)
+                stale["bounds"]["campaign_cutoff_disposition"] = "absent_by_authority" if disposition == "unknown" else "unknown"
+                path.write_text(json.dumps(stale))
+                with self.assertRaises(AssertionError):
+                    self.assertEqual(json.loads(path.read_text())["bounds"], mandate["bounds"])
+                stale = copy.deepcopy(record)
+                stale["tasks"][0]["attempt"]["deadline_at"] = "2030-01-01T00:30:00Z"
+                path.write_text(json.dumps(stale))
+                with self.assertRaises(AssertionError):
+                    self.assertEqual(json.loads(path.read_text())["tasks"], mandate["tasks"])
 
 
 if __name__ == "__main__":

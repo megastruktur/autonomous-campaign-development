@@ -137,6 +137,55 @@ separately authorized correction; never bypass the roster or silently expand pee
 Setup-only charter is not campaign START. A later actual feature mandate can revise bounded
 private charter/bindings, but cannot manufacture runtime or peer permissions.
 
+### Mandatory private template-instantiation preflight
+
+Before freezing, using or admitting project records, reconcile **new private copies** of
+`skills/acd-orca/templates/PLAN.md`, `HANDOFF.md`, `TASK.md`, `TODO.md` and `STATE.json`.
+Distributed templates, frozen historical documents and their hashes remain untouched.
+Placeholder replacement alone is insufficient: inspect concrete prose and non-placeholder JSON.
+Use the actual owner feature mandate and current skill/common/handoff contracts, without an
+extra START ritual. Setup-only is not development authority. Preserve every independent review,
+isolation, exact-source test/smoke, multiple-peer admission and activation-pending safeguard.
+
+In each Markdown copy, reconcile the following concrete clauses wherever they occur (including
+tables), not just an added disclaimer. Retain their safety requirements while replacing the
+historical authority/default with the actual private mandate, dispositions and evidence:
+
+| Private Markdown copy | Concrete clause selectors to reconcile |
+|---|---|
+| PLAN.md | `The staged candidate remains uninstalled` ; `For this campaign Amendment 02` ; `Preserve inherited low-effort/500000-token` ; `Maximum three paid working agents` ; `For the current no-commit mandate` |
+| HANDOFF.md | `For the active campaign,` ; `The current no-commit mandate` ; `Amendment 02 establishes` ; `Retain low-effort/500000-token` ; `Maximum three paid working agents` |
+| TASK.md | `For this campaign,` ; `current campaign forbids` ; `Amendment 2 establishes` ; `Retain low-effort/500000-token` ; `At most three paid working agents` ; `This campaign forbids commits` |
+| TODO.md | `For this campaign,` ; `Under Amendment 2` ; `Current limits:` ; `Retain low-effort/500000-token` |
+
+Also inspect all record/authority, models/readiness, bounds/continuation and delivery/cleanup
+sections: replace inherited one-file/fix/iteration/backstop limits, local-archive/no-commit and
+installation exclusions only with actual grants/denials, never erase preservation or quality gates.
+Rebind charter/amendment paths, hashes and scope; explicit project/repository/target and source
+revision; requested/resolved/actual models, provider versus engine, exact host/source/config
+qualification, not an author's accepted overlay. Record new private evidence paths/hashes.
+
+| STATE.json exact paths (dot notation; reconcile every listed field) | Actual mandate/evidence source |
+|---|---|
+| `owner`, `campaign`, `authority` | Owner/project/repository/target/source revision and charter/steering/delivery evidence; each grant separately, including commits, local archive, installation and cleanup. |
+| `models`, `execution_admission` | Requested/resolved/actual identities, provider/engine/host and qualified source/config receipts; admission stays false until all required checks pass. |
+| `bounds.campaign_cutoff_utc`, `bounds.campaign_cutoff_disposition`, `bounds.campaign_cutoff_authority` | Replace concrete historical path/hash/section/scope; null plus evidenced absent_by_authority ONLY for explicitly absent total cutoff. Unknown or denied is not absence. |
+| `bounds.historical_campaign_cutoff_utc`, `bounds.historical_cutoff_evidence_id` | Only this project's prior cutoff history, not an inherited author campaign. |
+| `bounds.attempt_budget_seconds`, `bounds.checkpoint_due_seconds`, `bounds.review_budget_seconds` | Finite 900/600/600-second defaults, or stricter actual bounds; no retroactive extension. |
+| `bounds.max_unproductive_attempts`, `bounds.max_slice_defect_fix_rounds`, `bounds.max_feature_integration_fix_rounds`, `bounds.feature_integration_fix_rounds_used` | Actual declared finite iteration ceilings and observed use, not invented zero or unlimited retries. |
+| `bounds.max_paid_working_agents`, `bounds.max_coding_agents`, `bounds.max_source_writers_per_worktree` | Actual caps subordinate to three occupied resource slots across all roles and one writer/worktree; record slot accounting in campaign.resource_exclusions_evidence_id; native release/exit only. |
+| `bounds.slice_effort`, `bounds.slice_token_limit`, `bounds.final_effort`, `bounds.final_token_limit`, `bounds.spend_reconciliation_evidence_id` | Actual effort/token/spend authority or explicit bounded unsupported-control disposition, never inherited token counts. |
+| `bounds.private_original_clocks_record`, `tasks` | Original started_at/checkpoint_due_at/deadline_at in each tasks[].attempt, phase/review deadlines and private clock evidence; handoff/fix/retry never resets them. |
+
+Retain `_template` version/hash externally then remove that metadata from operational STATE.
+Unknown REQUIRED authority stays JSON null with reason/consequence in `unknowns`; block the
+relevant operation, never substitute zero/unlimited/guessed approval. Explicitly absent cutoff
+needs null, `absent_by_authority` and actual authority path/hash/scope; otherwise use `unknown`
+and block dependent dispatch. Even legitimate absence preserves finite attempt/review deadlines.
+Re-read emitted private copies and compare every mapped value/clause with the provided mandate;
+reject stale historical values, contradictory copies and missing required evidence before freeze.
+Record source revision and template hashes externally; immutable input manifests have no self-hash.
+
 ## 5. Obtain actual loading evidence without starting work
 
 The legitimate owner sends this literal message in the **existing designated Home Chat**
