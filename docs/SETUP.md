@@ -20,6 +20,8 @@ Inspect `orca --help`, `omp --help`, `omp acp --help`, `roborev --help` and
 `roborev review --help` on that computer. A missing executable stops setup; install it
 through its official instructions, not a fallback engine. OMP is the supported path;
 Hermes/Codex guidance does not establish parity. Do not print credentials into a chat.
+Bot permissions and the non-Bot OMP worker override are separate. Check permissions in a
+fresh worker as well as the Bot chat; Full access is not assumed or required by this guide.
 
 ## 2. Clone, review and pin the complete tree
 

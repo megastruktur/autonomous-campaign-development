@@ -830,6 +830,40 @@ class SetupGuideTests(unittest.TestCase):
         )
         return repo
 
+    def test_pinning_block_detaches_exact_revision_and_rejects_invalid_sha(self):
+        blocks = re.findall(r"^```text\n(.*?)^```", self.text, re.MULTILINE | re.DOTALL)
+        pinning = next(block for block in blocks if block.startswith("export ACD_ORCA_REVISION="))
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            repo = self.clone_fixture(home)
+            sha = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+            branch = subprocess.check_output(["git", "-C", str(repo), "symbolic-ref", "HEAD"], text=True).strip()
+            invalid = self.run_block(pinning.replace("<reviewed-40-character-SHA>", "invalid"), home, repo=repo)
+            self.assertNotEqual(invalid.returncode, 0)
+            self.assertEqual(subprocess.check_output(
+                ["git", "-C", str(repo), "symbolic-ref", "HEAD"], text=True).strip(), branch)
+            self.assertEqual(subprocess.check_output(
+                ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip(), sha)
+            valid = self.run_block(pinning.replace("<reviewed-40-character-SHA>", sha), home, repo=repo)
+            self.assertEqual(valid.returncode, 0, valid.stderr)
+            self.assertEqual(subprocess.check_output(
+                ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip(), sha)
+            detached = subprocess.run(["git", "-C", str(repo), "symbolic-ref", "-q", "HEAD"], capture_output=True)
+            self.assertEqual(detached.returncode, 1)
+
+    def test_install_command_blocks_have_valid_bash_syntax(self):
+        text_blocks = re.findall(r"^```text\n(.*?)^```", self.text, re.MULTILINE | re.DOTALL)
+        commands = self.blocks + [block for block in text_blocks
+                                  if block.startswith(("set -euo pipefail", "export ACD_ORCA_REVISION="))]
+        self.assertEqual(len(commands), 4)
+        with tempfile.TemporaryDirectory() as tmp:
+            for block in commands:
+                result = subprocess.run(
+                    ["/bin/bash", "--noprofile", "--norc", "-n"], input=block,
+                    text=True, capture_output=True, cwd=tmp, env={"HOME": tmp}, timeout=10,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_every_offline_install_block_success_and_repeat_preserves_files(self):
         self.assertEqual(len(self.blocks), 2, "Exercise every Bash install block")
         with tempfile.TemporaryDirectory() as tmp:
