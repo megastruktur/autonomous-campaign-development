@@ -1092,6 +1092,72 @@ class GithubIssuesGuideTests(unittest.TestCase):
             self.assertIn(marker, self.flat)
 
 
+class OperationsGuideTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.path = ROOT / "docs" / "OPERATIONS.md"
+        cls.text = cls.path.read_text(encoding="utf-8")
+        cls.flat = " ".join(cls.text.split())
+
+    def test_steering_and_delivery_stay_with_same_owner(self):
+        for marker in ("same designated PROJECT Magos owner chat/Run", "**Status:**", "**Pause:**",
+                       "**Resume:**", "**Scope revision:**", "**Delivery:**",
+                       "before replacements", "Stale results cannot satisfy superseded acceptance",
+                       "MERGE only to the explicitly bound branch", "separately authorize each",
+                       "never expands authority", "No routine intermediate START"):
+            self.assertIn(marker, self.flat)
+
+    def test_update_rollback_and_uninstall_preserve_exact_owned_targets(self):
+        for marker in ("Settle active consumers first", "complete new tree", "pinned revision",
+                       "Do not git pull beneath live instructions", "private bindings and SOUL backups",
+                       "Only after owner approval", "exact target recorded at installation",
+                       "including each per-Bot bridge", "leave preexisting legacy acd",
+                       "Removing links does not unload chats", "No blanket recursive deletion",
+                       "explicit body/reference/common", "fresh actual execution sessions"):
+            self.assertIn(marker, self.flat)
+
+    def test_lifecycle_and_troubleshooting_never_claim_unproven_cleanup(self):
+        for marker in ("Completion/end-turn is NOT process exit or native release",
+                       "`agentSession.release` are not universal process-exit guarantees",
+                       "53 retained ACP processes", "historical unresolved observation",
+                       "not a claim that these docs fixed them", "Sleep → This Workspace",
+                       "quiescent", "Protected Group sessions", "With Descendants",
+                       "not a fallback", "identity impersonation", "service restarts",
+                       "Existing chats retain their own settings", "No automatic elevation",
+                       "local `gh` login and Git push credentials are separate",
+                       "not an OS sandbox unless independently evidenced"):
+            self.assertIn(marker, self.flat)
+
+    def test_optional_checks_and_legacy_are_not_current_acceptance(self):
+        for marker in ("Python 3.11+", "optional pinned-packet consistency example",
+                       "not required to use the stack", "not code authenticity or product acceptance",
+                       "not fixed historical totals", "legacy acd 1.7.0",
+                       "not current acd-orca defaults", "neither authorize nor block ordinary new use"):
+            self.assertIn(marker, self.flat)
+        commands = re.findall(r"^```bash\n(.*?)^```", self.text, re.MULTILINE | re.DOTALL)
+        self.assertEqual(len(commands), 1)
+        self.assertEqual(commands[0].splitlines(), [
+            "python3 -B -m unittest discover -s tests -v",
+            "python3 -B -m unittest discover -s qualification/manifest-validator -p 'test_*.py' -v",
+            "python3 -B qualification/manifest-validator/cli.py --help",
+        ])
+
+    def test_operations_relative_links_and_cross_document_anchors_resolve(self):
+        targets = re.findall(r"\[[^]]+\]\(([^)]+)\)", self.text)
+        self.assertTrue(any(target.startswith("SETUP.md#") for target in targets))
+        for target in targets:
+            with self.subTest(target=target):
+                path, separator, fragment = target.partition("#")
+                destination = self.path.parent / path if path else self.path
+                self.assertTrue(destination.is_file(), target)
+                if separator:
+                    headings = re.findall(r"^#{1,6}\s+(.+?)\s*#*\s*$",
+                                          destination.read_text(encoding="utf-8"), re.MULTILINE)
+                    slugs = {re.sub(r"[^\w\- ]", "", heading.lower()).replace(" ", "-")
+                             for heading in headings}
+                    self.assertIn(fragment, slugs, target)
+
+
 
 if __name__ == "__main__":
     unittest.main()
