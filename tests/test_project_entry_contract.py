@@ -3,6 +3,7 @@
 Setup shell blocks are exercised offline; UI/auth/native runtime readiness is not assumed.
 """
 
+import hashlib
 import os
 import re
 import unittest
@@ -939,6 +940,87 @@ class SetupGuideTests(unittest.TestCase):
                 result = self.run_block(block, home, PATH=empty)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("STOP: missing executable", result.stderr)
+
+    def test_generated_soul_approved_transition_and_repeat_preserve_backup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            repo = self.clone_fixture(home)
+            bot = home / ".orca/bots/example"
+            bot.mkdir(parents=True)
+            original = b"Owner-approved generated SOUL\n"
+            (bot / "SOUL.md").write_bytes(original)
+            source = repo / "fleet/bots/logis/SOUL.md"
+            backup = bot / "soul-backup-001"
+            settings = dict(BOT_HOME=bot, SOUL_SOURCE=source, SOUL_BACKUP_DIR=backup,
+                            APPROVED_SOUL_SHA256=hashlib.sha256(original).hexdigest())
+            shared = self.run_block(self.blocks[0], home)
+            self.assertEqual(shared.returncode, 0, shared.stderr)
+            installed = self.run_block(self.blocks[1], home, **settings)
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            self.assertEqual((backup / "SOUL.md").read_bytes(), original)
+            self.assertEqual(backup.stat().st_mode & 0o777, 0o700)
+            self.assertEqual((bot / "SOUL.md").read_bytes(), source.read_bytes())
+            bridge = bot / ".agents/skills/fleet-campaign"
+            self.assertEqual(bridge.readlink(), repo / "fleet/skills/fleet-campaign")
+            repeated = self.run_block(self.blocks[1], home, **settings)
+            self.assertNotEqual(repeated.returncode, 0)
+            self.assertEqual((backup / "SOUL.md").read_bytes(), original)
+            self.assertEqual((bot / "SOUL.md").read_bytes(), source.read_bytes())
+            self.assertEqual(bridge.readlink(), repo / "fleet/skills/fleet-campaign")
+
+    def test_generated_soul_backup_guards_preserve_unapproved_content(self):
+        cases = [(target, kind) for target in ("backup", "soul")
+                 for kind in ("file", "directory", "symlink", "dangling")]
+        cases += [("approval", "changed"), ("source", "missing"), ("source", "same"),
+                  ("bridge", "missing")]
+        for target, kind in cases:
+            with self.subTest(target=target, kind=kind), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                repo = self.clone_fixture(home)
+                bot = home / ".orca/bots/example"
+                bot.mkdir(parents=True)
+                soul = bot / "SOUL.md"
+                original = b"Generated SOUL\n"
+                soul.write_bytes(original)
+                backup = bot / "soul-backup-001"
+                source = repo / "fleet/bots/logis/SOUL.md"
+                approved = hashlib.sha256(original).hexdigest()
+                collision = backup if target == "backup" else soul
+                if target in ("backup", "soul"):
+                    if target == "soul":
+                        soul.unlink()
+                    if kind == "file":
+                        collision.write_bytes(b"Different owner content")
+                    elif kind == "directory":
+                        collision.mkdir()
+                        (collision / "keep").write_bytes(original)
+                    else:
+                        collision.symlink_to(source if kind == "symlink" else home / "absent")
+                    before = collision.lstat()
+                elif target == "approval":
+                    approved = "0" * 64
+                elif target == "source":
+                    source = soul if kind == "same" else home / "missing-source"
+                else:
+                    (repo / "fleet/skills/fleet-campaign/SKILL.md").unlink()
+                result = self.run_block(self.blocks[1], home, BOT_HOME=bot, SOUL_SOURCE=source,
+                                        SOUL_BACKUP_DIR=backup, APPROVED_SOUL_SHA256=approved)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse((bot / ".agents/skills/fleet-campaign").exists())
+                if target in ("backup", "soul"):
+                    self.assertEqual(collision.lstat(), before)
+                if target != "soul":
+                    self.assertEqual(soul.read_bytes(), original)
+                if target != "backup":
+                    self.assertFalse(backup.exists())
+
+    def test_permissions_are_actionable_separate_and_never_automatic(self):
+        flat = " ".join(self.text.split())
+        for marker in ("Bot header gear → Settings → Agent → Permissions",
+                       "Settings → Agents → OMP", "Existing chats retain their own setting",
+                       "fresh worker", "Orca 1.4.268", "Manual/Auto/Yolo/Other agents",
+                       "Full access is optional and risk-bearing", "never automatic elevation"):
+            self.assertIn(marker, flat)
 
 
 

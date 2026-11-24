@@ -20,8 +20,12 @@ Inspect `orca --help`, `omp --help`, `omp acp --help`, `roborev --help` and
 `roborev review --help` on that computer. A missing executable stops setup; install it
 through its official instructions, not a fallback engine. OMP is the supported path;
 Hermes/Codex guidance does not establish parity. Do not print credentials into a chat.
-Bot permissions and the non-Bot OMP worker override are separate. Check permissions in a
-fresh worker as well as the Bot chat; Full access is not assumed or required by this guide.
+Owner permission setup (observed Orca 1.4.268): **Bot header gear → Settings → Agent →
+Permissions**; separately **Settings → Agents → OMP** sets the future non-Bot worker override.
+Existing chats retain their own setting; verify the selected chat and a fresh worker.
+Public [Settings docs](https://orca.dev/docs/settings) use Manual/Auto/Yolo/Other agents labels;
+match installed help rather than equating labels. Full access is optional and risk-bearing,
+never automatic elevation; prefer approval mode for untrusted intake under the security guidance.
 
 ## 2. Clone, review and pin the complete tree
 
@@ -105,23 +109,36 @@ of `{{PROJECT_NAME}}` with its display name; do not insert repo paths or IDs in 
 not an extra required owner. Add another project Magos, not another copy of all five shared Bots.
 
 Bot homes are `~/.orca/bots/<name>` on the selected execution computer; verify the actual
-folder name, not a display-label guess. Before replacing an existing generated SOUL, compare
-it with the source, save an owner-approved backup outside the destination and explicitly approve
-replacement. The following block intentionally refuses existing SOULs, including generated ones.
-For a new/approved empty destination, set `BOT_HOME` to the verified absolute Bot home and
-`SOUL_SOURCE` to a reviewed complete SOUL file (a renamed private copy for PROJECT Magos).
-Both variables must be exported. Run once for each Bot:
+folder name, not a display-label guess. Compare a generated SOUL with the reviewed replacement.
+For approved replacement, export `APPROVED_SOUL_SHA256` as the generated file's owner-reviewed
+`sha256sum` value, and `SOUL_BACKUP_DIR` as a new absolute directory inside this Bot home
+(for example `$BOT_HOME/soul-backup-001`). The block creates it privately and moves the original
+there without overwrite; otherwise existing SOULs still stop. Export `BOT_HOME` and `SOUL_SOURCE`
+as verified absolute home and reviewed complete source (identity-renamed private copy for Magos).
 
 ```bash
 # install-bot
 set -euo pipefail
-for tool in ln mkdir cat; do
+for tool in ln mkdir cat mv sha256sum; do
   command -v "$tool" >/dev/null || { echo "STOP: missing executable: $tool" >&2; exit 1; }
 done
 repo="$HOME/.local/share/acd-orca/repo"
 : "${BOT_HOME:?Set verified absolute Bot home}" "${SOUL_SOURCE:?Set reviewed SOUL source}"
-[[ "$BOT_HOME" = /* && -d "$BOT_HOME" && -f "$SOUL_SOURCE" ]] || { echo 'STOP: invalid Bot inputs' >&2; exit 1; }
+[[ "$BOT_HOME" = /* && -d "$BOT_HOME" && -f "$SOUL_SOURCE" && ! -L "$SOUL_SOURCE" ]] || { echo 'STOP: invalid Bot inputs' >&2; exit 1; }
 [[ -f "$repo/fleet/skills/fleet-campaign/SKILL.md" ]] || { echo 'STOP: missing bridge' >&2; exit 1; }
+bridge="$BOT_HOME/.agents/skills/fleet-campaign"
+[[ ! -e "$bridge" && ! -L "$bridge" ]] || { echo "STOP: existing path: $bridge" >&2; exit 1; }
+if [[ -n "${APPROVED_SOUL_SHA256:-}" ]]; then
+  soul="$BOT_HOME/SOUL.md"
+  [[ -f "$soul" && ! -L "$soul" && ! "$SOUL_SOURCE" -ef "$soul" ]] || { echo 'STOP: invalid generated SOUL' >&2; exit 1; }
+  actual=$(sha256sum -- "$soul"); actual=${actual%% *}
+  [[ "$actual" = "$APPROVED_SOUL_SHA256" ]] || { echo 'STOP: SOUL changed since approval' >&2; exit 1; }
+  [[ "${SOUL_BACKUP_DIR:-}" = "$BOT_HOME/"* && "${SOUL_BACKUP_DIR##*/}" != .* ]] || { echo 'STOP: choose a new backup directory in Bot home' >&2; exit 1; }
+  [[ "${SOUL_BACKUP_DIR%/*}" = "$BOT_HOME" ]] || exit 1
+  mkdir -m 700 -- "$SOUL_BACKUP_DIR"
+  mv -nT -- "$soul" "$SOUL_BACKUP_DIR/SOUL.md"
+  [[ ! -e "$soul" && ! -L "$soul" ]] || { echo 'STOP: backup move incomplete' >&2; exit 1; }
+fi
 for path in "$BOT_HOME/.agents/skills/fleet-campaign" "$BOT_HOME/SOUL.md"; do
   [[ ! -e "$path" && ! -L "$path" ]] || { echo "STOP: existing path: $path" >&2; exit 1; }
 done
@@ -131,7 +148,8 @@ ln -sT "$repo/fleet/skills/fleet-campaign" "$BOT_HOME/.agents/skills/fleet-campa
 ```
 
 This bridge links into the preserved tree; do not copy it without its dependencies.
-A concurrent collision fails rather than overwrites. A partial run needs inspection, not force.
+A partial run needs inspection: retain the backup, verify its bytes, and unset approval only
+if the SOUL move completed and the destination is empty. Reruns stop; never force or auto-restore.
 
 ## 4. Bind one owner and the shared peers privately
 
