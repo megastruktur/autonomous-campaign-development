@@ -6,6 +6,7 @@ Setup shell blocks are exercised offline; UI/auth/native runtime readiness is no
 import hashlib
 import os
 import re
+import shlex
 import unittest
 import subprocess
 import tempfile
@@ -1021,6 +1022,74 @@ class SetupGuideTests(unittest.TestCase):
                        "fresh worker", "Orca 1.4.268", "Manual/Auto/Yolo/Other agents",
                        "Full access is optional and risk-bearing", "never automatic elevation"):
             self.assertIn(marker, flat)
+
+
+class GithubIssuesGuideTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.path = ROOT / "docs" / "GITHUB_ISSUES.md"
+        cls.text = cls.path.read_text(encoding="utf-8")
+        cls.flat = " ".join(cls.text.split())
+
+    def test_optional_setup_and_public_source_links(self):
+        for marker in ("GitHub is optional", "Add a connector", "Connect GitHub",
+                       "Only select repositories", "Turn on", "local `gh` authentication",
+                       "Git push credentials", "does not establish the exact App permission manifest"):
+            self.assertIn(marker, self.flat)
+        targets = re.findall(r"\[[^]]+\]\(([^)]+)\)", self.text)
+        for target in ("SETUP.md", "../fleet/templates/magos-project/SOUL.md",
+                       "../fleet/skills/fleet-campaign/references/common-contract.md"):
+            self.assertIn(target, targets)
+        for target in targets:
+            if not target.startswith("https://"):
+                self.assertTrue((self.path.parent / target).is_file(), target)
+        self.assertIn("https://orca.dev/docs/bots/security", targets)
+        self.assertIn("https://orca.dev/docs/cli/automations", targets)
+
+    def test_trial_command_is_disabled_existing_owner_and_syntax_only(self):
+        blocks = re.findall(r"^```bash\n(.*?)^```", self.text, re.MULTILINE | re.DOTALL)
+        self.assertEqual(len(blocks), 1)
+        command = blocks[0]
+        result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-n"],
+                                input=command, text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        argv = shlex.split(command.replace("\\\n", ""))
+        self.assertEqual(argv[:3], ["orca", "automations", "create"])
+        self.assertEqual(argv[argv.index("--on") + 1],
+                         "github.labeled in=OWNER/REPO from=@TRUSTED_ACTOR label=approved-for-magos")
+        self.assertEqual(argv[argv.index("--runs-in") + 1], "chat:<bound-owner-id>")
+        self.assertEqual(argv[argv.index("--results-to") + 1], "chat")
+        self.assertIn("--disabled", argv)
+        self.assertNotIn("--dry-run", argv)
+        prompt = argv[argv.index("--prompt") + 1]
+        for marker in ("SETUP-ONLY", "Issue not PR", "UNTRUSTED DATA", "missing metadata",
+                       "durable private ledger stops admission", "including completed requests",
+                       "immutable repository identity + Issue identity", "OWNER CHAT",
+                       "No workers, code, planning commission, merge, push, deploy or GitHub reply",
+                       "explicit owner re-admission"):
+            self.assertIn(marker, prompt)
+
+    def test_filter_distinctions_and_durable_admission(self):
+        for marker in (
+            "Who can ask does not filter event automations", "labeler, not necessarily the author",
+            "only for `github.labeled`, not `github.issue_opened`", "reject PRs",
+            "`github.mentioned` means the owner", "How to ask", "distinct allowed actor",
+            "no `issue_edited` event", "unfinished", "not exactly-once", "Redelivery after completion",
+            "Failed storage means no admission", "explicit re-admission", "ambiguous bindings",
+            "no invented native ledger CLI", "NOT RUN here", "ledger failure",
+        ):
+            self.assertIn(marker, self.flat)
+
+    def test_reporting_and_relay_do_not_claim_automatic_source_authority(self):
+        for marker in (
+            "no automatic native GitHub source reply", "Separately authorized owner-account posting",
+            "not an automatic App reply", "`--runs-in new --results-to thread`",
+            "`thread` requires `new`", "proposed and UNTESTED", "original source conversation as reply endpoint",
+            "plain handoff does not transfer", "stay chat-only", "no live connection",
+            "trial accept decision is not a development mandate", "same PROJECT Magos commissions",
+            "push and deploy need separate authority",
+        ):
+            self.assertIn(marker, self.flat)
 
 
 
