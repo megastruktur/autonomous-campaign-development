@@ -1158,6 +1158,121 @@ class OperationsGuideTests(unittest.TestCase):
                     self.assertIn(fragment, slugs, target)
 
 
+class ReadmeLandingTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = (ROOT / "README.md").read_text(encoding="utf-8")
+        cls.blocks = re.findall(r"^```bash\n(.*?)^```", cls.text, re.MULTILINE | re.DOTALL)
+
+    def test_simple_overview_navigation_setup_and_usage(self):
+        self.assertLessEqual(len(self.text.splitlines()), 100)
+        self.assertEqual(re.findall(r"^## (.+)$", self.text, re.MULTILINE),
+                         ["Installation", "Basic setup", "Usage"])
+        opening = self.text.split("\n\n", 1)[1].split("[Setup]", 1)[0].strip()
+        self.assertIn(len(opening.split("\n\n")), (1, 2))
+        for marker in ("PROJECT Bot", "CSV export", "shared planners", "independent critics",
+                       "OMP worktree writers", "real tests", "roborev", "authorization"):
+            self.assertIn(marker, opening)
+        navigation = self.text.split("## Installation", 1)[0]
+        for marker in ("[Setup]", "[GitHub Issues]", "[Roles]", "[Operations]"):
+            self.assertIn(marker, navigation)
+        for marker in ("five shared Bots once", "one project Magos per repository",
+                       "no extra Magos Fleet Bot", "do not manually hand off",
+                       "Planning only", "separate explicit authorization"):
+            self.assertIn(marker, self.text)
+        self.assertEqual(len(self.blocks), 1)
+        for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", self.text):
+            path, separator, anchor = target.partition("#")
+            destination = ROOT / path
+            self.assertTrue(destination.is_file(), target)
+            if separator:
+                headings = re.findall(r"^#{1,6}\s+(.+?)\s*#*\s*$",
+                                      destination.read_text(encoding="utf-8"), re.MULTILINE)
+                slugs = {re.sub(r"[^\w\- ]", "", heading.lower()).replace(" ", "-")
+                         for heading in headings}
+                self.assertIn(anchor, slugs, target)
+
+    def install(self, home, source=ROOT, approval=True, path=None):
+        sha = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+        env = {**os.environ, "HOME": str(home), "GIT_CONFIG_NOSYSTEM": "1",
+               "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_COUNT": "1",
+               "GIT_CONFIG_KEY_0": f"url.{source}.insteadOf",
+               "GIT_CONFIG_VALUE_0": "https://github.com/megastruktur/autonomous-campaign-development.git"}
+        if path is not None:
+            env["PATH"] = str(path)
+        result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-c", self.blocks[0]],
+                                input=f"reviewed {sha}\n" if approval else "no\n", text=True,
+                                capture_output=True, cwd=home, env=env, timeout=20)
+        return result, sha
+
+    def test_actual_install_pins_downloaded_sha_and_preserves_repeat(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            result, sha = self.install(home)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f"Revision: {sha}", result.stdout)
+            repo = home / ".local/share/acd-orca/repo"
+            self.assertEqual(subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip(), sha)
+            self.assertEqual(subprocess.run(["git", "-C", str(repo), "symbolic-ref", "-q", "HEAD"], capture_output=True).returncode, 1)
+            for name, target in (("skills/acd-orca", "skills/acd-orca"),
+                                 ("skills/acd", "skills/acd"), ("fleet", "fleet")):
+                self.assertEqual((home / ".agents" / name).readlink(), repo / target)
+            self.assertTrue((repo / "docs/SETUP.md").is_file())
+            repeated, _ = self.install(home)
+            self.assertNotEqual(repeated.returncode, 0)
+            self.assertIn("STOP: existing path", repeated.stderr)
+            self.assertEqual((home / ".agents/fleet").readlink(), repo / "fleet")
+
+    def test_no_approval_or_missing_executable_exposes_no_links(self):
+        for missing in (False, True):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                empty = home / "empty"
+                empty.mkdir()
+                result, _ = self.install(home, approval=False, path=empty if missing else None)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("missing executable" if missing else "not acknowledged", result.stderr)
+                self.assertFalse((home / ".agents").exists())
+
+    def test_checkout_and_link_collisions_are_non_destructive(self):
+        for name in (".local/share/acd-orca/repo", ".agents/skills/acd-orca",
+                     ".agents/skills/acd", ".agents/fleet"):
+            for kind in ("file", "directory", "symlink", "dangling"):
+                with self.subTest(name=name, kind=kind), tempfile.TemporaryDirectory() as tmp:
+                    home = Path(tmp)
+                    collision = home / name
+                    collision.parent.mkdir(parents=True)
+                    if kind == "file":
+                        collision.write_text("keep")
+                    elif kind == "directory":
+                        collision.mkdir()
+                        (collision / "keep").write_text("keep")
+                    else:
+                        collision.symlink_to(ROOT if kind == "symlink" else home / "absent")
+                    before = collision.lstat()
+                    result, _ = self.install(home)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("STOP: existing path", result.stderr)
+                    self.assertEqual(collision.lstat(), before)
+
+    def test_incomplete_download_stops_before_exposing_instructions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            source = home / "fixture"
+            subprocess.run(["git", "clone", "--local", "--no-hardlinks", str(ROOT), str(source)],
+                           check=True, capture_output=True)
+            missing = source / "fleet/templates/magos-project/SOUL.md"
+            missing.unlink()
+            subprocess.run(["git", "-C", str(source), "-c", "user.name=Fixture",
+                            "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false",
+                            "commit", "-am", "Fixture missing dependency", "--no-verify"],
+                           check=True, capture_output=True)
+            result, _ = self.install(home, source=source)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("STOP: missing dependency", result.stderr)
+            self.assertFalse((home / ".agents").exists())
+
+
 
 if __name__ == "__main__":
     unittest.main()
