@@ -1,8 +1,13 @@
 """Public historical-document contracts, not runtime or reconstructed-history proof."""
 
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
+
+import test_project_entry_contract as entry_contract
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -330,6 +335,141 @@ class PortableHandoffTests(unittest.TestCase):
                     slugs = [re.sub(r"[^\w\s-]", "", heading.lower()).replace(" ", "-")
                              for heading in headings]
                     self.assertIn(fragment, slugs, target)
+
+
+class InstallAgentGuideTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.path = ROOT / "docs/INSTALL_AGENT.md"
+        cls.text = cls.path.read_text(encoding="utf-8")
+        cls.flat = " ".join(cls.text.split())
+        cls.harness = entry_contract.SetupGuideTests()
+        setup = (ROOT / "docs/SETUP.md").read_text(encoding="utf-8")
+        cls.install_blocks = re.findall(r"^```bash\n(.*?)^```", setup, re.MULTILINE | re.DOTALL)
+        cls.transition = next(block for block in re.findall(
+            r"^```bash\n(.*?)^```", cls.text, re.MULTILINE | re.DOTALL
+        ) if block.startswith("# transition-owned-link"))
+
+    def test_installation_scope_migration_and_private_admission_contract(self):
+        self.assertLessEqual(len(self.text.splitlines()), 220)
+        for boundary in (
+            "instruction stack, not a daemon or product installer",
+            "public HTTPS repository without GitHub login", "inspect actual path types, resolved parents, ownership",
+            "Fresh", "Update", "Partial", "Customized", "complete immutable release",
+            "including dangling links", "no in-place pull", "no recursive HOME overwrite",
+            "existing regular legacy acd directory is not automatic failure",
+            "retain compatible local content", "required referenced dependencies",
+            "shared skill update is not Bot migration", "exact old link targets, SOUL and private bindings",
+            "Protected SOUL replacement requires actual interactive owner approval",
+            "no headless retry or bypass", "Reconcile only exact affected consumers",
+            "five shared planning Bots once plus one project owner", "no takeover, duplicate owner",
+            "Validate both directions", "An owner-only map is insufficient",
+            "stale bootstrap exclusions stop admission", "cannot manufacture runtime or peer permissions",
+            "ignore rules alone are not privacy proof", "Native Windows/macOS adaptation",
+            "WSL is a distinct execution host", "instruction limits do not prove enforcement",
+        ):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, self.flat)
+
+    def test_owner_prompt_and_readiness_do_not_authorize_runtime_or_spend(self):
+        prompts = re.findall(r"^```text\n(.*?)^```", self.text, re.MULTILINE | re.DOTALL)
+        self.assertEqual(len(prompts), 2)
+        prompt = " ".join(prompts[1].split())
+        self.assertTrue(prompt.endswith("STOP"))
+        for boundary in ("actual SOUL", "private bindings and charter", "full skill://acd-orca body",
+                         "skill://acd-orca/references/engines/omp.md", "bound filesystem bridge/common contract",
+                         "fresh own-session read-tool evidence", "without messaging peers or workers",
+                         "Do not develop, create a Run/coordinator, activate GitHub or change permissions/settings"):
+            self.assertIn(boundary, prompt)
+        for boundary in ("existing designated Home Chat", "activation pending", "never forge `--from`",
+                         "edit a runtime database", "not prove auxiliary judge/smol health",
+                         "report failures/unknown separately", "temperature or global settings to force PASS",
+                         "context and spend authorization", "They do not qualify real auth, Bots, providers",
+                         "exact next owner steps"):
+            self.assertIn(boundary, self.flat)
+        self.assertEqual(re.findall(r"^\| (Configured|Discovered|Actually loaded|Current peer admission|Provider qualified|Native smoke) \|",
+                                    self.text, re.MULTILINE),
+                         ["Configured", "Discovered", "Actually loaded", "Current peer admission",
+                          "Provider qualified", "Native smoke"])
+
+    def test_guide_links_and_command_adaptation_resolve(self):
+        self.assertIn('repo="${ACD_ORCA_RELEASE:?Set reviewed release}"', self.text)
+        for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", self.text):
+            if target.startswith("https://"):
+                continue
+            with self.subTest(target=target):
+                filename, _, fragment = target.partition("#")
+                path = self.path.parent / filename
+                self.assertTrue(path.is_file(), target)
+                if fragment:
+                    headings = re.findall(r"^#+\s+(.+)$", path.read_text(encoding="utf-8"), re.MULTILINE)
+                    slugs = [re.sub(r"[^\w\s-]", "", heading.lower()).replace(" ", "-")
+                             for heading in headings]
+                    self.assertIn(fragment, slugs, target)
+
+    def test_release_install_update_and_rollback_preserve_sources(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            old = self.harness.clone_fixture(home)
+            sha = subprocess.check_output(["git", "-C", str(old), "rev-parse", "HEAD"], text=True).strip()
+            release = old.parent / "releases" / sha
+            shutil.copytree(old, release)
+            bot = home / ".orca/bots/project-a"
+            bot.mkdir(parents=True)
+            source = release / "fleet/bots/logis/SOUL.md"
+            for block in self.install_blocks:
+                adapted = block.replace('repo="$HOME/.local/share/acd-orca/repo"',
+                                        'repo="${ACD_ORCA_RELEASE:?Set reviewed release}"')
+                result = self.harness.run_block(adapted, home, ACD_ORCA_RELEASE=release,
+                                                BOT_HOME=bot, SOUL_SOURCE=source)
+                self.assertEqual(result.returncode, 0, result.stderr)
+            links = {
+                home / ".agents/skills/acd-orca": "skills/acd-orca",
+                home / ".agents/skills/acd": "skills/acd",
+                home / ".agents/fleet": "fleet",
+                bot / ".agents/skills/fleet-campaign": "fleet/skills/fleet-campaign",
+            }
+            # Use two retained trees of the same actual revision; no invented release SHA.
+            for link, relative in links.items():
+                self.assertEqual(link.readlink(), release / relative)
+                for expected, new in ((release / relative, old / relative),
+                                      (old / relative, release / relative)):
+                    result = self.harness.run_block(self.transition, home, LINK_PATH=link,
+                                                    EXPECTED_TARGET=expected, NEW_TARGET=new)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(link.readlink(), new)
+            self.assertEqual((bot / "SOUL.md").read_bytes(), source.read_bytes())
+            self.assertEqual((old / "skills/acd/SKILL.md").read_bytes(),
+                             (release / "skills/acd/SKILL.md").read_bytes())
+
+    def test_transition_refuses_changed_targets_directories_and_dangling_links(self):
+        for kind in ("changed", "directory", "file", "dangling", "missing-target"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                old = home / "old"
+                new = home / "new"
+                old.mkdir()
+                new.mkdir()
+                (old / "keep").write_text("preserved custom content")
+                link = home / "selected"
+                if kind == "directory":
+                    link.mkdir()
+                    (link / "keep").write_text("legacy custom content")
+                elif kind == "file":
+                    link.write_text("owner file")
+                else:
+                    link.symlink_to(new if kind == "changed" else home / "absent" if kind == "dangling" else old)
+                before = link.lstat()
+                result = self.harness.run_block(self.transition, home, LINK_PATH=link,
+                                                EXPECTED_TARGET=old,
+                                                NEW_TARGET=home / "missing" if kind == "missing-target" else new)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(link.lstat(), before)
+                self.assertEqual((old / "keep").read_text(), "preserved custom content")
+                if kind == "directory":
+                    self.assertEqual((link / "keep").read_text(), "legacy custom content")
+                elif kind == "file":
+                    self.assertEqual(link.read_text(), "owner file")
 
 
 if __name__ == "__main__":
