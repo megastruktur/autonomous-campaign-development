@@ -472,5 +472,113 @@ class InstallAgentGuideTests(unittest.TestCase):
                     self.assertEqual(link.read_text(), "owner file")
 
 
+class PortableCodeReviewTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.path = ROOT / "skills/acd-orca/references/code-review.md"
+        cls.text = cls.path.read_text(encoding="utf-8")
+        cls.flat = " ".join(cls.text.split())
+
+    def assert_current_policy(self, text):
+        flat = " ".join(text.split())
+        for boundary in (
+            "actual project mandate and current [skill](../SKILL.md)",
+            "Default substantive code review is **roborev** under the current skill/common contract",
+            "provenance only, not current permissions, universal bounds or readiness prerequisites",
+            "Each user supplies their own qualified exact host/config/provider/engine/model",
+            "same evidenced environment/configuration/bytes",
+            "Missing scope does not authorize paid probes",
+            "Build your own qualified private config/overlay",
+            "not a required baseline or file to obtain",
+            "Actual declared effort/token, iteration and spend limits bind",
+            "Total campaign cutoff is nullable when the actual mandate has none",
+        ):
+            self.assertIn(boundary, flat)
+        for obsolete in (
+            "Use the accepted **corrected** private config/overlay as the baseline",
+            "Preserve inherited **low effort", "500000 tokens", "2000000 tokens",
+            "**two paid workers**", "current charter attempts", "for the staged, uninstalled candidate",
+            "are approved future targets, **PENDING**", "deadline and campaign cutoff before",
+        ):
+            self.assertNotIn(obsolete, flat)
+
+    def test_current_policy_rejects_reintroduced_private_prerequisites_and_bounds(self):
+        self.assert_current_policy(self.text)
+        for mutation in (
+            "Use the accepted **corrected** private config/overlay as the baseline.",
+            "Preserve inherited **low effort / 500000 tokens per slice**.",
+            "Allow at most **two paid workers**.",
+            "Check deadline and campaign cutoff before dispatch.",
+        ):
+            with self.subTest(mutation=mutation):
+                with self.assertRaises(AssertionError):
+                    self.assert_current_policy(self.text + "\n" + mutation)
+
+    def test_finite_bounds_original_clocks_and_native_custody(self):
+        for boundary in (
+            "Review wall time defaults to at most **10 minutes**; stricter mandates prevail",
+            "authorized extension must be recorded before the affected phase, never retroactively",
+            "attempts at most **15 minutes**, checkpoint **10 minutes**, review **10 minutes**",
+            "**three occupied resource slots**", "**one source writer per worktree**",
+            "no mutation during frozen review",
+            "Actual native release/exit evidence frees slots, not end-turn",
+            "unknown outcomes still occupy custody and capacity",
+            "Preserve original clocks across handoff, retries, fixes and wakes",
+            "null is not expiry and does not waive finite attempt/review deadlines",
+            "deadline and any non-null cutoff before affected dispatch, integration or acceptance",
+            "Stop new affected work on expiry", "no handoff or retry resets the clock",
+            "Preserve declared fix/unproductive-attempt ceilings",
+            "findings do not authorize unlimited retries",
+            "require explicit authorized bounded reconciliation before admission",
+            "Never invent flags, silently broaden limits or claim wall time enforces tokens",
+            "unknown is `null`, not zero or inferred savings",
+        ):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, self.flat)
+
+    def test_config_isolation_and_error_aware_coverage_remain_required(self):
+        for boundary in (
+            "roborev 0.75.0 using native ACP to OMP 19.1.1",
+            "new private directory, configuration and reviewer session for each run",
+            "Never resume, fork or feed the implementer's transcript/reasoning into review",
+            "Do not include an expected verdict, self-PASS",
+            'allow_unsafe_agents = false', 'reuse_review_session = false', 'review_context_count = 0',
+            'read_only_mode = "plan"', 'disable_mode_negotiation = false', '`read,grep,glob` tools',
+            "Context-file, extension, skill, rule, LSP, PTY and prewalk discovery remain disabled",
+            "No edit/write/terminal tools or automatic fixes",
+            'features.unexpectedStopDetection = "none"', 'not the invalid historical value `off`',
+            "Check the effective tool list after mode negotiation", "are not OS confinement",
+            "Never disable negotiation, enable unsafe/auto-approve modes or loosen permissions",
+            "Adversarial write/execute/outside-root denial was not established",
+            "review-only no-hooks snapshot outside the live checkout",
+            "Required coverage must be nonzero and complete",
+            "Retain the original **schema 3 JSON**", "`pass`, `fail`, `unable_to_review`",
+            "Exit 0 and ACP `end_turn` are not PASS",
+            "no zero-required-file review can pass", "Preserve raw findings even on incomplete runs",
+            "`critical -> blocking`, `high -> blocking`, `medium -> blocking`, `low -> nonblocking`",
+            "Unknown/unmappable severity is INCONCLUSIVE",
+            "source/config/diff/scenario binding drift", "provider-readiness receipt",
+            "integration and actual smoke pass", "Archive the attributable diff, untracked source",
+        ):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary.lower(), self.flat.lower())
+
+    def test_current_assets_and_local_link_anchors_resolve(self):
+        self.assertIn("current-tree assets, not unauthored/PENDING targets", self.flat)
+        self.assertIn("makes no new provider/runtime readiness claim", self.flat)
+        for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", self.text):
+            if target.startswith("https://"):
+                continue
+            with self.subTest(target=target):
+                filename, _, fragment = target.partition("#")
+                path = self.path.parent / filename
+                self.assertTrue(path.is_file(), target)
+                if fragment:
+                    headings = re.findall(r"^#+\s+(.+)$", path.read_text(encoding="utf-8"), re.MULTILINE)
+                    slugs = [re.sub(r"[^\w\s-]", "", heading.lower()).replace(" ", "-")
+                             for heading in headings]
+                    self.assertIn(fragment, slugs, target)
+
+
 if __name__ == "__main__":
     unittest.main()
