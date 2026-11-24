@@ -1,370 +1,263 @@
-# Autonomous Campaign Development (Agent Skill)
+# Autonomous Campaign Development on Orca
 
-Reusable orchestration instructions for running autonomous, multi-task development
-campaigns: an orchestrator (the coordinator) plans, dispatches OMP coding agents into
-Orca-managed worktrees, integrates, and verifies — without writing source code itself.
-Designed for the
-[Hermes](https://hermes-agent.nousresearch.com/docs/user-guide/features/skills/) planner
-profile; portable to other orchestrating agents with adapter changes.
+**[acd-orca](skills/acd-orca/SKILL.md) 1.0.0** is an instruction skill for
+evidence-led development campaigns: capture intent, design a small plan, obtain
+independent review, implement in native OMP worktrees, test, review with roborev,
+and integrate within the owner's delivery authority.
 
-This is a **procedure-first [Agent Skill](https://agentskills.io/specification)**:
-`SKILL.md` plus references and templates, bundled since v1.1.0 with a small **optional**
-observer utility (`scripts/`, Python 3 standard library only) that helps a coordinator
-monitor agent progress.
+It is **not a server, daemon, scheduler, or validator application**. Installing it
+starts no work and grants no permissions. Supervision uses native Orca tasks,
+events and Automations with transient supervised OMP executions, independent
+reviewers, and explicit release/exit receipts—not a homemade watcher or a fresh
+persistent Bot chat for every code review.
 
-- The skill is **not** a running scheduler or service — nothing executes on its own, and
-  the observer scripts run only when explicitly invoked. Unattended coordinator wakeups
-  rely on a sanctioned wakeup mechanism: the bounded event watcher with completion
-  notification (Option A, v1.2.0, template bundled) or the runtime's native session
-  heartbeat (Option B, verified per procedure) — contract in
-  `references/coordinator-heartbeat.md`.
-- It bundles **no** coding model, reviewer ("inquisitor") binary, or other executables
-beyond the two read-only observer scripts and one inert shell template (the bounded
-event watcher — it runs only when a coordinator explicitly spawns it).
-- It provides **no guarantee** of fully hands-off, safe execution. A human approves the
-  plan and separately starts execution; destructive actions still stop for explicit
-  permission.
+Legacy **[acd 1.7.0](#legacy-acd-170)** remains available unchanged. These are two
+skill versions, not a new global package version. [MIT license](LICENSE).
 
-Version 1.7.0 · MIT License.
+## Prerequisites
 
-## Requirements
+- [Orca](https://orca.dev/docs/agents/native-chat) with native OMP execution,
+  worktrees, tasks/events and the permissions needed for the approved project.
+  Resolve the actual executable on the execution host/container; do not assume
+  every Linux `orca` is a screen reader or every installation uses `orca-ide`.
+- [OMP](https://github.com/can1357/oh-my-pi) with skill discovery enabled and an
+  approved model that actually completes the required tool calls in that environment.
+  Record requested, resolved and observed model identities privately. Qualify any
+  auxiliary model purpose used; primary-model success does not prove it works.
+- Git, a target repository, and access to its real build/test/runtime surfaces.
+  The Linux installation recipe below uses Bash and GNU coreutils.
+- An independent **roborev → native OMP ACP** review route. The evidenced composition
+  used roborev 0.75.0, OMP 19.1.1 and `acp.omp`; shared-home discovery was exercised
+  with Orca 1.4.268. These are observed versions, not universal compatibility claims.
+  Follow the [review contract](skills/acd-orca/references/code-review.md): use a
+  neutral exact-candidate snapshot, an approved model/tool route, scoped capability
+  evidence and raw findings. A configured model, help output or exit zero is not PASS.
 
-- [Orca](https://github.com/stablyai/orca) — worktrees, terminals, and its Skills UI.
-  On a Linux host the local CLI is `orca-ide`; resolve the Orca executable per
-  platform/runtime (inside Orca terminals: `orca`; dev checkouts: `orca-dev`; WSL exports
-  `ORCA_CLI_COMMAND`).
-- [OMP (Oh My Pi)](https://github.com/can1357/oh-my-pi) — the harness driving the coding
-  agents; see its [skills documentation](https://github.com/can1357/oh-my-pi/blob/main/docs/skills.md).
-- Python 3 — only for the optional progress-observer scripts; standard library only, no
-  auto-start, no network, no dependencies.
-- Node.js/npm — only for the installer CLI below.
-- Git.
-- Model access for the coding model, fallback model, and independent reviewer.
-- Optional: [OCR (alibaba/open-code-review)](https://github.com/alibaba/open-code-review)
-  (`ocr` CLI, Node.js/npm install, git >= 2.41 recommended) with a tool-calling-capable
-  review model. When installed and working, OCR becomes the EXCLUSIVE code-review engine
-  for the campaign (v1.7.0); the skill offers installation once at planning start if it
-  is absent. No OCR binary is bundled.
-- The ability to run real runtime tests in the target repository.
-- At least one independent reviewer mechanism: OCR when installed, otherwise an
-  independent reviewer session (read-only).
+Only OMP has operational evidence here. The
+[Hermes](skills/acd-orca/references/engines/hermes.md) and
+[Codex](skills/acd-orca/references/engines/codex.md) sheets are guidance, not parity
+qualification. No models, credentials, reviewer binaries or automatic setup are bundled.
+Python is needed only for the [optional local checks](#optional-local-checks).
 
-## Install (recommended: Orca workspace, project scope)
+## Install: preserve the dependency tree
 
-Run this in a terminal **inside the Orca workspace/folder of the project** where you want
-the skill available. It uses the same community skills CLI Orca itself uses
-([vercel-labs/skills](https://github.com/vercel-labs/skills#install-a-skill)):
+**Do not copy only `skills/acd-orca`, or assume `npx skills add … --skill acd-orca`
+alone is qualified.** Its relative links require both `fleet/` source and legacy
+`skills/acd/` migration documents. Keep a complete, durable repository-shaped tree.
+Orca `skills install` handles bundled skills, not this custom package. No native
+Orca skill-share cloud publication is supplied; a GitHub push is not cloud publication.
 
-```bash
-npx --yes skills add megastruktur/autonomous-campaign-development \
-  --skill acd --agent universal -y
-```
+The successful shared-home installation used a durable tree plus:
 
-- No `--global`: the skill installs **project-scoped** into that project's
-  `.agents/skills/` and does not touch any other agent's global profile.
-- `--agent universal` keeps the installation narrowly scoped instead of spraying every
-  detected agent directory.
-- `-y` skips confirmation prompts (CI-friendly).
+| Discovered path | Target / purpose |
+|---|---|
+| `~/.agents/skills/acd-orca` | Tree's `skills/acd-orca`; new skill |
+| `~/.agents/fleet` | Tree's `fleet`; dependency-only bridge, not live Bot setup |
+| `~/.agents/skills/acd` | Existing legacy files, preserved and hash-matched to the tree |
 
-Loading prerequisites: Orca's Skills UI scans installed skill homes — including the
-shared Agent Skills directory and OMP's `~/.omp/agent/skills` — so installed skills show
-up without manual symlinking. For OMP specifically, the community CLI has no
-`--agent omp` target: place or point the skill at OMP's documented skill path, or
-have OMP read the Hermes-installed copy at `~/.hermes/skills/acd/SKILL.md`
-explicitly.
+OMP retains the lexical discovered base directory. Consequently an external
+`../../fleet` link needs the shared-root bridge even when `acd-orca` is a symlink.
+The fresh-install recipe below supplies legacy `acd` as a third link **only when
+all three names are absent**. An existing skill, directory or dangling symlink is
+a collision: stop, compare contents and explicitly arrange a backup/migration.
+Never overwrite an existing `acd` installation to make this recipe pass.
 
-Note: `npx skills` collects anonymous telemetry by default; opt out with
-`DISABLE_TELEMETRY=1` ([docs](https://skills.sh/docs/cli)).
+### Linux fresh install
 
-## Preview and verify
+Choose a reviewed, available full commit from this repository and set
+`ACD_ORCA_REVISION` to its 40-character SHA. It must contain the complete dependency
+tree. Review the source before enabling it as agent instructions. Run these blocks
+in the same Bash shell on the host/container whose home OMP actually uses.
 
 ```bash
-# Preview what this repo offers, without installing anything
-npx --yes skills add megastruktur/autonomous-campaign-development --list
-
-# List what is installed in the current project (community CLI)
-npx skills list
+set -euo pipefail
+repo="$HOME/.local/share/acd-orca/repo"
+revision="${ACD_ORCA_REVISION:?Set a reviewed full commit SHA first}"
+[[ "$revision" =~ ^[0-9a-f]{40}$ ]] || { echo 'STOP: invalid commit SHA' >&2; exit 1; }
+for path in "$repo" "$HOME/.agents/skills/acd-orca" \
+  "$HOME/.agents/skills/acd" "$HOME/.agents/fleet"; do
+  if [[ -e "$path" || -L "$path" ]]; then
+    printf 'STOP: existing path: %s\n' "$path" >&2
+    exit 1
+  fi
+done
+mkdir -p "$(dirname "$repo")"
+git clone https://github.com/megastruktur/autonomous-campaign-development.git "$repo"
+git -C "$repo" checkout --detach "$revision"
+test "$(git -C "$repo" rev-parse HEAD)" = "$revision"
 ```
 
-To verify from the Orca side, check the Skills page in the Orca UI, or run
-`orca-ide skills installed --json` on a Linux host (substitute the Orca executable your
-platform/runtime resolves). It returns safe selectors without exposing local paths;
-`orca-ide skills list` resolves only Orca's bundled registry, not third-party installs.
-
-Two Orca mechanisms are **not** routes to install this GitHub repo:
-
-- `orca-ide skills install --skill …` only resolves Orca's **bundled** skill registry;
-  it cannot install third-party skills from GitHub.
-- The Orca UI's **Skills → Install from link** expects a published **Orca skill-share
-  URL**, not an arbitrary GitHub URL.
-
-### About native Orca skill sharing
-
-Orca can share skills natively via **Skills → Share skills → Publish new version**
-(requires an Orca account; CLI publication additionally requires the default-off
-*Settings → Share Skills → Allow agents and the Orca CLI to publish skill links*
-permission). Per Orca's
-[sharing documentation](https://github.com/stablyai/orca/blob/main/docs/reference/sharing-agent-skills.md):
-
-- Published skill **versions are immutable**; publishing always creates a new version.
-- Share management lives in **Settings → Share Skills**; only the original publishing
-  account/package can publish new versions — publishing from one host does not magically
-  sync files installed on another host, and pushing to GitHub does **not** update any
-  Orca cloud snapshot.
-- Recipients manage installs via **Skills → Manage installs**: they can update to the
-  latest published version or roll back to a retained version. Do **not** assume an old
-  share link always serves the latest version unless you verify it.
-- On update, Orca's **Keep local** default preserves locally modified files; they are
-  replaced only when you explicitly discard them.
-- Native share URLs are unlisted capability links: do not publish them inside this
-  repository.
-
-The owner of this skill may have published an Orca share from another device. No share
-URL is embedded here (none was provided for this repo), which is why the GitHub route
-above is the documented one. A publisher who installs this skill may share their own
-copy through Orca's Share skills flow.
-
-### Optional: Hermes route
-
-If you use Hermes with an existing profile:
+Then create guarded exact links. `ln -sT` has no force option: an intervening
+collision fails instead of overwriting or nesting a link inside an existing directory.
 
 ```bash
-hermes -p planner skills install \
-  megastruktur/autonomous-campaign-development/skills/acd
-# then preload it in a chat:
-hermes -p planner chat --skills acd
+set -euo pipefail
+repo="$HOME/.local/share/acd-orca/repo"
+for file in skills/acd-orca/SKILL.md skills/acd-orca/references/engines/omp.md \
+  skills/acd/SKILL.md fleet/skills/fleet-campaign/references/common-contract.md; do
+  test -f "$repo/$file" || { printf 'STOP: missing dependency: %s\n' "$file" >&2; exit 1; }
+done
+for path in "$HOME/.agents/skills/acd-orca" "$HOME/.agents/skills/acd" "$HOME/.agents/fleet"; do
+  if [[ -e "$path" || -L "$path" ]]; then
+    printf 'STOP: existing path: %s\n' "$path" >&2
+    exit 1
+  fi
+done
+mkdir -p "$HOME/.agents/skills"
+ln -sT "$repo/skills/acd-orca" "$HOME/.agents/skills/acd-orca"
+ln -sT "$repo/skills/acd" "$HOME/.agents/skills/acd"
+ln -sT "$repo/fleet" "$HOME/.agents/fleet"
 ```
 
-#### Updating an existing Hermes installation
+Keep the checkout at that revision, not on an automatically updated branch.
+If interrupted, inspect any links already created; do not rerun with force.
+This non-network link block was exercised in an isolated temporary home with the
+full tracked tree, missing-dependency cases and name collisions—not against a real home.
+The clone step still requires network access and availability of the selected commit.
 
-How you update depends on how the skill was originally installed — check before acting:
+### Verify discovery and actual loading
 
-- **Hub-installed source** (`hermes -p planner skills` shows a hub/registry source):
-  `hermes -p planner skills update acd` updates it.
-  Avoid `--force`: it overwrites local edits.
-- **Locally authored source** (`source=local`, e.g. a hand-placed or edited copy):
-  there is no safe blanket update. Back up the installed copy, review the incoming
-  payload, stage the replacement, and record what was replaced (a provenance receipt).
-  Never let an updater silently delete local drift.
-- In **any** case, a currently running session keeps the skill text it already loaded —
-  a fresh session is required to pick up the updated version.
-
-## What it does
-
-The skill is a coordinator contract for one development campaign:
-
-- **Four-phase planning gate (v1.4.0)**: (1) capture intent, brainstorm functionality, and
-  perform MANDATORY bounded read-only repository discovery (including manifest/lockfile
-  dependency, license, and footprint policies plus already-installed reusable libraries);
-  (2) perform MANDATORY web research scaled to the feature — including a mandatory
-  **live-verified open-source library evaluation** of whole and partial functionality
-  (search installed dependencies + standard library → whole-functionality libraries →
-  partial/sub-problem libraries; OSI/license-compatible, popular and battle-tested,
-  active/not deprecated, CVE/footprint fit; reuse-first anti-NIH with an
-  anti-micro-package counterweight) — and design an architecture from cited evidence plus
-  actual repository patterns; (3) commission an independent critique covering intent
-  fidelity, architecture, Security, UX, and execution readiness, then revise and repeat
-  until a fresh `CONVERGED` verdict binds the exact current design hashes; (4) only then
-  create the DAG and task files. Approved dependencies are pinned in shared contracts
-  with manifest/lockfile updates serialized to a single owner, and newly adopted
-  third-party dependencies are presented inside the single WHAT approval gate. Explicit
-  user intent outranks architectural preference. Durable `INTENT.md`, `RESEARCH.md`, and
-  `CRITIQUE.md` artifacts are frozen into the manifest.
-- **Planning/execution boundary (v1.1.0)**: one explicit plan approval authorizes WHAT
-  may happen — it never starts agents. The planning session writes a durable HANDOFF
-  plus a SHA-256 manifest of the frozen plan files and stops; execution begins only in a
-  **distinct fresh coordinator session** on an explicit START bound to that manifest
-  (drifted files invalidate consent). Already-started campaigns resume without
-  re-gating. No per-task human gates are added.
-- **DAG and resource ownership**: explicit dependency edges and resource exclusions
-  (files, APIs, migration ordering, schema ownership, lockfiles, build output, ports,
-  fixture data, databases, external side effects); shared contracts are settled
-  centrally, never designed independently by sibling tasks.
-- **Model questionnaire**: one question set fixes the coding model, fallback model, and
-  independent reviewer model (`default` resolves to the runtime's actual configured
-  default, or an exact ID); resolved IDs are recorded, verified at startup, and pinned.
-- **Concurrency cap**: at most **three** simultaneously active coding agents (fix and
-  remediation agents included), one writer per worktree.
-- **Topology** (v1.3.0): a dedicated campaign worktree on its own branch cut from the
-  recorded **named** target branch at the pinned start SHA (never assumes
-  `main`/`master`, never a raw-SHA/`HEAD` base); every task worktree is an Orca child
-  of the campaign worktree (`--parent-worktree`) based on the campaign branch at its
-  current tip.
-- **Per-task loop**: develop → runtime test loop → independent review loop → squash
-  integration and conflict handling → post-merge runtime smoke → evidence and cleanup.
-  Runtime tests run after the executor declares readiness and after every fix batch.
-- **Independent review**: a read-only reviewer that never edited the code returns an
-  explicit complete **PASS/FAIL** verdict with actionable findings, commissioned by the
-  coordinator with a raw, unbiased evidence packet. **OCR engine (v1.7.0)**: when the
-  `ocr` CLI (alibaba/open-code-review) is installed and working, code review runs
-  exclusively through OCR — one budget-capped `ocr review` run per frozen candidate
-  (effort low per task, medium final), reviewer model pinned as OCR's model, verdict
-  derived by the coordinator from the JSON findings (critical/high/medium block, low
-  never blocks); no inquisitor code-review sessions and no silent fallback. If OCR is
-  absent, the skill offers installation once at planning start. Contract:
-  `references/ocr-review.md`.
-- **Coordinator wakeups via sanctioned mechanisms (v1.2.0)**: campaign START and
-  adoption of a running campaign must establish AND verify one sanctioned wakeup
-  mechanism before claiming autonomous monitoring. **Option A (recommended for
-  unattended runs): the bounded event watcher** — the coordinator spawns
-  `templates/bounded_watcher.sh` with `background=true, notify=true`; it polls every
-  ~20s and exits on the first actionable event (worktree commit, worker terminal
-  exit, >25m session silence after exactly one bounded nudge) or at the slice budget
-  (default 15 min) — Hermes' notify-on-completion turns each exit into a coordinator
-  turn carrying the event summary. Auto-stop: at completed/paused/needs-user states
-  the coordinator spawns no next watcher — no daemon, no token drain, no manual
-  cleanup. **Option B: the native session heartbeat** — `/heartbeat every 5m` with
-  two automatic no-nudge cycles, observer-timestamped duty receipts, and stop
-  control through the guarded terminal-controller path. Infinite `notify:true`
-  loops, one-shot observer polls, and watch-pattern notifications are explicitly
-  rejected as schedulers; without a verified mechanism the campaign is honestly not
-  autonomous. Contract: `references/coordinator-heartbeat.md`.
-- **Strict progress semantics (v1.1.0)**: transport/process activity (streams, bytes,
-  PID, file growth), a successful model response, and actual task progress are never
-  conflated; only explicit structured checkpoints count as progress. An optional
-  stdlib-only watchdog (`scripts/`) reports activity/health snapshots — observer-only:
-  no kills, no nudges, no network, writes only its own sidecar directory.
-- **Loops with evidence-based escalation**: no fixed iteration cap while evidence shows
-  progress; non-convergence is an evidence-based pause (identical failure fingerprints,
-  oscillating fixes, model cycling, scope growth, missing capability), not a counter.
-- **Bounded execution attempts (procedural)**: each attempt runs under an approved
-  budget (default 35 minutes from actual launch, checkpoint inspection at 20 minutes,
-  at most one scoped steer, max two unproductive attempts per slice before an approved
-  fallback or pause); budget expiry settles the attempt with partial work preserved —
-  never a permanent FAIL, never auto-acceptance. Enforcement is coordinator procedure,
-  not an observer-script flag.
-- **Durable state**: canonical `STATE.json` (schema 2: campaign lifecycle plus planning
-  and execution session records)/`TODO.md`/`EVENTS.jsonl`/evidence under the campaign
-  directory; the coordinator polls every active session on a **ten-minute cadence only
-  while the campaign is running**.
-- **Endgame**: full-campaign acceptance/seam runtime tests plus independent final review
-  at the exact campaign tip, coordinator-only merge (default `--no-ff`) to the recorded
-  source branch, post-merge smoke on the target, evidence archived **before** worktree
-  cleanup.
-
-## Usage
-
-Installing the skill starts nothing and grants no permissions. Once your planning agent
-has loaded it (explicit invocation: `/acd`), request a campaign in plain words, for example:
-
-> Start an autonomous campaign: add OAuth login and a profile settings page to this
-> repo. Plan the tasks, ask me the model questions, and get my approval before any
-> agent starts working.
-
-The skill then drives intent + repository discovery → web research + architecture →
-independent critique/revision until convergence → DAG + task decomposition → model
-questionnaire → **one approval gate** (WHAT
-may happen) → HANDOFF + manifest written → the planning session **stops**. You begin
-execution by pasting the START prompt (from the HANDOFF) into a **new, clean coordinator
-session**; that session validates the manifest, the repo state, and its own capabilities
-before creating any worktree or agent. To resume a started campaign after a restart or
-crash:
-
-> Resume the campaign from its state files in plans/ and continue where evidence left
-> off.
-
-## Evidence policy
-
-- **Runtime test evidence** is the standard of done: the real application exercising the
-  changed behavior. A green unit/integration suite alone never substitutes.
-- Mocks are for external boundaries only; mock-only verification is not "verified".
-- The author's self-review is optional preparation and **cannot replace** the
-  coordinator-commissioned independent review.
-
-## Repository contents
-
-```
-skills/acd/
-├── SKILL.md                                 # the skill: contract, procedure, pitfalls
-├── references/
-│   ├── coordinator-heartbeat.md              # coordinator wakeup contract: Option A watcher + Option B heartbeat (v1.2.0)
-│   ├── planning-and-design.md                # mandatory intent/research/critique/DAG gate (v1.4.0)
-│   ├── handoff-and-start.md                 # planning boundary, HANDOFF, manifest, START
-│   ├── hermes-orca-omp.md                   # dispatch mechanics and command shapes
-│   ├── progress-watchdog.md                 # progress semantics, observer CLI contract
-│   ├── runtime-review-and-integration.md    # topology, review, integration, cleanup
-│   ├── ocr-review.md                        # OCR code-review engine protocol (v1.7.0)
-│   ├── state-and-recovery.md                # state schema, lifecycle, resume
-│   └── validation-tabletop.md               # static checks and tabletop walkthroughs
-├── templates/
-│   ├── INTENT.md                            # intent + mandatory repository discovery
-│   ├── RESEARCH.md                          # cited web research + OSS library evaluation + architecture/Security/UX
-│   ├── CRITIQUE.md                          # independent five-lens revision/convergence history
-│   ├── PLANNING_STATE.json                  # mutable planning-phase and hash gate
-│   ├── PLAN.md                              # campaign plan template
-│   ├── TASK.md                              # per-task file template
-│   ├── HANDOFF.md                           # execution handoff + manifest shape
-│   ├── TODO.md                              # campaign TODO template
-│   ├── STATE.json                           # campaign state template (schema 2)
-│   ├── WATCH.json                           # observer config template (schema_version 1)
-│   └── bounded_watcher.sh                   # Option A bounded event watcher template (v1.2.0)
-└── scripts/                                 # optional observer utility (v1.1.0)
-    ├── omp_events.py                        # metadata-only OMP session log adapter
-    └── campaign_watch.py                    # deterministic progress watcher CLI
-```
-
-`templates/WATCH.json` mirrors the implemented `campaign_watch.py` config schema;
-replace its `/path/to/...` placeholders and `registered_at` before first use. Command
-surface, validation rules, and known constraints:
-`references/progress-watchdog.md`.
-
-## Customization and porting
-
-Fork and edit freely (MIT). The procedure in `SKILL.md` is runtime-agnostic in intent,
-but the mechanics live in `references/hermes-orca-omp.md` — port those dispatch commands
-to your orchestration runtime as needed. After modifying a copy, run the static checks
-and tabletop walkthroughs in `references/validation-tabletop.md` before relying on it.
-
-## Update / uninstall
-
-With the community skills CLI, in the project where it is installed:
+Use the resolved executables in the actual execution host/container and project cwd:
 
 ```bash
-npx skills remove acd   # remove from agent directories
+orca skills installed --json
+omp skill list --json
 ```
 
-For updates, re-run the exact `skills add` command from [Install](#install-recommended-orca-workspace-project-scope)
-against the same scope: it re-fetches the repo's current payload and walks you through
-any conflicts with local files — review the prompts and keep backups of local edits.
-(The CLI's positional-name `update` form is not advertised here because its targeting
-was not verified against upstream.)
+Check the main UI **Skills** entry `acd-orca` and OMP's selected path/source for
+collisions. In a **fresh native OMP session**, ask the agent to use its read tool on:
 
-## Safety, trust, and license
+```text
+skill://acd-orca
+skill://acd-orca/references/engines/omp.md
+```
 
-- Read `SKILL.md` and the references before use; this is third-party instruction content
-  for agents — treat it with the same scrutiny as any other dependency.
-- The skill defers to repository instructions (e.g. `AGENTS.md`), hooks, permission
-  systems, and your campaign approval; conflicts are surfaced, not bypassed.
-- Autonomous execution requires BOTH your explicit plan approval and a separate explicit
-  START in a fresh session; push/deploy remain separate permissions. No guarantee of
-  unattended safety is offered or implied.
-- The observer scripts are read-only helpers: they never kill, nudge, merge, or talk to
-  the network, and they write only their own sidecar directory.
-- License: MIT — see [LICENSE](LICENSE).
+Read external links as ordinary filesystem paths resolved from the discovered
+base directory, for example `~/.agents/fleet/skills/fleet-campaign/references/common-contract.md`
+after expanding the home path. Do not use `skill://../` traversal. Compare body and
+reference hashes to the pinned tree. Fresh native body/reference reads and the external
+common-contract read have been exercised against the installed layout; discovery,
+body loading and useful task behavior remain three separate claims.
 
-## Compatibility boundaries (facts)
+Long-running chats do not automatically replace instructions already consumed.
+Start a fresh session after an approved update. See the
+[OMP loading sheet](skills/acd-orca/references/engines/omp.md) and
+[upstream skills guide](https://github.com/can1357/oh-my-pi/blob/main/docs/skills.md).
+No invented slash command or hidden `.local` receipt is required to read the skill.
 
-- Designed and worded for the Hermes planner profile driving OMP agents in Orca
-  worktrees; other runtimes need adapter changes.
-- The host CLI on Linux is `orca-ide`; bare `orca` outside Orca's terminals is the GNOME
-  screen reader. Resolve the Orca executable per platform/runtime.
-- The community skills CLI's global install path differs across versions
-  (`~/.config/agents/skills` or `~/.agents/skills`) — one reason this README recommends
-  project scope.
-- The community skills CLI does not target OMP (`--agent omp` does not exist); use
-  OMP's documented skill path or an explicit read.
-- Campaign state written by v1.0.0 (`schema_version` 1 or missing) remains resumable:
-  already-started campaigns keep their original approval; approved-but-never-started
-  ones require a fresh-session START under the v1.1.0 contract
-  (`references/state-and-recovery.md` describes the migration; nothing is auto-enforced).
-- The full workflow additionally requires Orca + OMP + an independent reviewer
-  mechanism (OCR when installed, otherwise a read-only reviewer session).
+## Practical usage
 
-## Sources
+Give the project coordinator an outcome, repository, constraints and delivery boundary.
+Use reasonable bounded slices; do not manufacture a large DAG for a trivial fix.
+The normal sequence is intent and repository discovery → small evidence-backed plan →
+independent design critique → native OMP worktree implementation → tests and real-runtime
+proof → independent roborev review → authorized integration and post-integration smoke.
+Use the [planning](skills/acd-orca/references/planning-and-design.md),
+[handoff](skills/acd-orca/references/handoff.md) and
+[runtime/integration](skills/acd-orca/references/runtime-review-and-integration.md)
+contracts with the current mandate, not a replay of frozen campaign amendments.
 
-- [Orca skills registry & MCP (CLI docs)](https://github.com/stablyai/orca/blob/main/docs/site/content/docs/cli/skills.mdx)
-- [Orca: sharing agent skills](https://github.com/stablyai/orca/blob/main/docs/reference/sharing-agent-skills.md)
-- [vercel-labs/skills — install a skill](https://github.com/vercel-labs/skills#install-a-skill)
-- [skills.sh CLI reference](https://skills.sh/docs/cli)
-- [Agent Skills specification](https://agentskills.io/specification)
-- [Hermes skills documentation](https://hermes-agent.nousresearch.com/docs/user-guide/features/skills/)
+Example captain prompts:
+
+> Read acd-orca and the references needed for this project. Add CSV export to the
+> existing reports screen. Reuse the repository's patterns, keep dependencies unchanged,
+> plan small bounded slices and obtain independent design and code review. I authorize
+> implementation, real-runtime tests and MERGE to the named target branch after the
+> gates pass. No PUSH or deployment. Proceed without routine intermediate approval
+> questions inside this scope; report evidence for one final owner review.
+
+> Use acd-orca to investigate and plan resumable uploads. Inspect the repository,
+> research reuse options and obtain independent design critique. Planning only:
+> no implementation, worktree launch, merge, push or deployment. Return the proposed
+> acceptance criteria and risks so I can decide whether to authorize execution.
+
+> Resume the authorized campaign from its durable state. Reconcile existing native
+> tasks and worker exit/release evidence before starting replacements. Continue only
+> unfinished work under the original constraints; preserve unrelated live work.
+> Stop at a reviewed local commit—no merge, push or deployment.
+
+The normal delivery boundary is **MERGE only when authorized**; PUSH and deployment
+need separately named authority. Narrower or broader mandates are possible. No prompt
+grants automatic destructive permissions or bypasses repository policy, hooks or runtime
+approval controls. Within a fully authorized campaign, use one final owner review, not
+routine human gates between every slice; an actual blocker or changed scope still escalates.
+
+### Role setup is separate
+
+Six Mechanicus-named role definitions are included: Magos Logis II, Logis Intent,
+Logis Architect, Inquisitor Ferrum, Inquisitor Intent and Magos Fleet. See the
+[role index and source SOUL links](skills/acd-orca/references/roles.md) and the
+[Project Magos template](fleet/templates/magos-project/SOUL.md).
+Installing the skill does not create or reconfigure these Bots. The owner must arrange
+private peer bindings, actual role loading and one execution coordinator per project.
+Missing or conflicting bindings block mutation; names alone are not identities.
+
+Existing SOUL references to `fleet-campaign` are historical loading paths, not
+automatically repointed to `acd-orca`. The fleet bridge exposes source dependencies,
+not live configuration. Do not publish live bindings, chats, credentials or runtime state.
+
+## Optional local checks
+
+Python **3.11+**, standard library only. From this repository root:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s qualification/manifest-validator -p 'test_*.py' -v
+python qualification/manifest-validator/cli.py --help
+```
+
+The reviewed source passed **155 legacy tests and 60 pilot tests** with Python 3.14.9.
+The legacy watcher test can emit unclosed `TextIOWrapper` ResourceWarnings while the
+suite passes; those warnings are not a product failure. The CLI help command was also
+executed. These checks do not replace a target project's runtime proof or independent review.
+
+The [manifest validator](qualification/manifest-validator/validator.py) and
+[CLI](qualification/manifest-validator/cli.py) are an **optional qualification example**:
+they check a pinned local packet for consistency, not code authenticity or product
+acceptance. Consult the [validator tests](qualification/manifest-validator/test_validator.py)
+and [CLI tests](qualification/manifest-validator/test_cli.py) for the input contract and
+examples. You can use the skill without running the validator.
+
+CuteCare is pilot-project context only. This repository did **not** build or deploy a
+complete CuteCare product or run its actual business tasks. Attaching connectors and
+manual testing remain the captain's responsibility.
+
+## Limitations, updates and uninstall
+
+- Frozen `fleet/` campaigns/amendments and staged/uninstalled/PENDING wording in the
+  immutable source are migration provenance. Installation and fresh loading were
+  evidenced separately; those historical labels neither undo the installation nor
+  authorize a new campaign. They do not establish universal engine qualification.
+- Independent reviewer restrictions are not necessarily OS-enforced confinement.
+  Static checks, synthetic qualification and successful analysis delivery are not
+  product acceptance. Preserve exact-source, runtime and review evidence separately.
+- Native worker completion or end-turn does not prove process exit. Do not promise
+  that closing a tab kills OMP or `agentSession.release` unloads everything. For
+  inaccessible Groups, the owner UI route is **Sleep → This Workspace**, only after
+  source/evidence preservation and ownership checks. Exclude user-owned live work.
+- Updating means reviewing a new pinned tree, comparing dependencies and existing
+  local changes, explicitly approving any link repointing, then verifying discovery
+  and reads in a fresh session. Do not `git pull` beneath active installed links.
+
+To uninstall, first inspect with `readlink` each link created by your installation:
+`~/.agents/skills/acd-orca`, `~/.agents/fleet`, and (fresh recipe only)
+`~/.agents/skills/acd`. Unlink only names whose exact targets still equal your recorded
+targets and whose dependencies are no longer in use. Never remove a pre-existing legacy
+`acd`, another installation's bridge, or live project work. Keep the durable checkout
+until nothing references it; removing discovery links does not unload existing chats.
+
+## Legacy acd 1.7.0
+
+The unchanged [legacy skill](skills/acd/SKILL.md) describes the Hermes-planner/OMP
+workflow, explicit planning approval plus a separate fresh-session START, OCR-first
+review, and bounded watcher/native-heartbeat alternatives. Its optional standard-library
+observer scripts do not run merely because the skill is installed.
+
+Use its own [handoff and START contract](skills/acd/references/handoff-and-start.md),
+[OCR reference](skills/acd/references/ocr-review.md),
+[wakeups](skills/acd/references/coordinator-heartbeat.md),
+[observer usage](skills/acd/references/progress-watchdog.md), and
+[state/recovery](skills/acd/references/state-and-recovery.md) for existing legacy
+campaigns. Those mechanisms are **not acd-orca defaults**. Legacy source, templates,
+scripts and [changelog](CHANGELOG.md) remain intact; do not migrate an existing campaign
+or replace its installed skill without explicit authority and reviewed recovery state.
