@@ -257,5 +257,174 @@ class DeliveryContractTests(unittest.TestCase):
                 self.assertTrue(privacy_errors(self.text + "\n" + fixture))
 
 
+RUNTIME = ROOT / "skills/acd-orca/references/orca-runtime.md"
+RUNTIME_SECTION = "native communication and waiting"
+PIN = "https://github.com/stablyai/orca/blob/5dc5548b4570b276f231d81fbb51f8f7a066e40d/"
+PINNED_SOURCES = {
+    PIN + path for path in (
+        "src/main/bots/bot-turn-ended.ts#L24-L35",
+        "src/main/runtime/rpc/methods/orchestration/messaging/bot-request-outcome.ts#L109-L166",
+        "src/main/runtime/orchestration/db/bot-requests/bot-request-outcomes.ts#L19-L48",
+        "src/main/runtime/rpc/methods/orchestration/messaging/reply-method.ts#L158-L185",
+        "src/main/bots/bot-request-policy.ts#L7-L14",
+        "src/shared/bot-quiet-result.ts#L3-L16",
+        "src/shared/rpc-contract/orchestration/orchestration-params.ts#L30-L79",
+        "src/main/runtime/rpc/methods/orchestration/messaging/check-direct.ts#L75-L104",
+    )
+}
+
+# Independent runtime obligations; slice-one validators remain unchanged.
+RUNTIME_POLICIES = (
+    ("worker", "ask the coordinator with native `ask`, then end the turn until its correlated reply arrives",
+     "workers must keep their turn open after native ask"),
+    ("nested", "an outbound question is not supervised Dispatch work",
+     "an outbound question is supervised Dispatch work"),
+    ("dispatch", "`pending`/`dispatched` Dispatches created by the answering session can suppress turn-end `unanswered` settlement",
+     "pending Tasks suppress turn-end unanswered settlement"),
+    ("session-scope", "session-wide last-50 Dispatch inspection, not guaranteed per-request dependency tracking",
+     "guaranteed per-request dependency tracking"),
+    ("fake-pending", "A pending Task/Run/registry cannot substitute; do not create Dispatches to evade the rule",
+     "create Dispatches to evade turn-end settlement"),
+    ("quiet", "`NO_REPLY` and ordinary prose neither register pending work nor answer the incoming question",
+     "NO_REPLY registers pending work and answers the incoming question"),
+    ("handoff", "Handoff changes actual authorized job ownership but still expects an answer; it is not an automatic fix or deferred-question flag",
+     "handoff automatically fixes nested waiting and needs no answer"),
+    ("reply-slot", "keep the incoming reply slot available: no premature pending native reply followed by an expected second final",
+     "send a premature pending native reply then a second final"),
+    ("own-wait", "Keep the answering turn open with your OWN bounded native wait",
+     "When waiting on native work or input, end the turn"),
+    ("check-syntax", "<ORCA> orchestration check --terminal <SELF> --wait --timeout-ms <WAIT_MS> --json",
+     "<ORCA> orchestration check --terminal <SELF> --wait --json"),
+    ("reply-syntax", '<ORCA> orchestration reply --id <INCOMING_ID> --body "<FINAL_BODY>" --json',
+     '<ORCA> orchestration reply --id <DOWNSTREAM_ID> --body "<FINAL_BODY>" --json'),
+    ("self-definition", "`<SELF>` is this answering agent's verified runtime-issued terminal/mailbox handle, never another actor's identity",
+     "SELF may identify another actor's mailbox"),
+    ("timeout-definition", "`<WAIT_MS>` is a positive integer number of milliseconds no greater than the freshly computed remaining budget",
+     "WAIT_MS may exceed the remaining budget"),
+    ("message-definition", "`<INCOMING_ID>` is the exact incoming question message ID, not its downstream peer request",
+     "INCOMING_ID is the downstream peer request"),
+    ("sender", "Reply uses the actual bound sender; never forge `--from`",
+     "forge --from to deliver the answer"),
+    ("no-observer", "No observer consumes another mailbox, script/sleep pollers, external watchers, new timers or interruption are authorized by this wait",
+     "use an external observer to consume another mailbox"),
+    ("deadline", "Before delegation freeze the original absolute UTC `deadline_at`; forward it unchanged each hop",
+     "reset deadline_at at every hop"),
+    ("reserve", "Declare upstream relay/final-delivery reserve before work as policy, not schema",
+     "reserve is a native schema field"),
+    ("recompute", "Before each dispatch and every wait recompute `deadline_at - current UTC - reserve`",
+     "compute remaining budget only once before delegation"),
+    ("admission", "Refuse insufficient-budget dispatch or subrequest; the wait timeout must fit that remaining budget",
+     "allow insufficient-budget dispatch or subrequest"),
+    ("cutoff", "At the reserve cutoff produce ONE explicit bounded final native answer to the incoming ID: known/unknown facts and correlated pending work, not invented absence of child work. There is no renewed deadline",
+     "renew the deadline at cutoff instead of answering"),
+    ("receipt", "Preserve the native receipt and source-owner correlation under the",
+     "assistant prose replaces the native receipt"),
+    ("unknown-send", "Reconcile an unknown reply outcome before retry; do not consume a second answer slot",
+     "retry an unknown reply outcome without reconciliation"),
+    ("all-mail", "Every native wake/wait reconciles ALL correlated returned messages, including automatic `unanswered` and late substantive answers, not only the first status/type",
+     "reconcile only the first returned status"),
+    ("fifo", "Check's `--types` controls the wait's wake condition, not the consumed FIFO batch contents",
+     "--types filters consumed FIFO batch contents"),
+    ("noanswer", "No-answer is a turn outcome, not proof that no child worked",
+     "no-answer proves that no child worked"),
+    ("binding", "Preserve project/request/revision/candidate/critic/owner/supersession/deadline bindings",
+     "discard candidate and critic bindings on wake"),
+    ("late-answer", "A first late answer after `unanswered` is supported; a second answer after `answered` is not. Use a new correlated informational update",
+     "send a second answer after answered"),
+    ("duplicate", "Duplicate notices never justify duplicate dispatch or delivery",
+     "duplicate notices justify duplicate dispatch"),
+    ("expiry", "Late evidence never retro-passes the cutoff or resumes superseded work; retain original expiry",
+     "late evidence retro-passes the cutoff and resumes superseded work"),
+    ("version", "These observed limitations are version-qualified, not an upstream patch claim or runtime guarantee. Pinned public sources for Orca 1.4.268",
+     "this documentation proves an upstream runtime patch"),
+)
+
+
+def runtime_policy_errors(text):
+    body = sections(text).get(RUNTIME_SECTION, "").casefold()
+    flat = " ".join(text.split()).casefold()
+    errors = set()
+    for key, required, unsafe in RUNTIME_POLICIES:
+        if required.casefold() not in body:
+            errors.add(key)
+        # Sentence boundary avoids interpreting 'not guaranteed ...' as its opposite.
+        if re.search(r"(?:^|[.!?]\s+|\n\s*)" + re.escape(unsafe.casefold()), flat):
+            errors.add(key)
+    return errors
+
+
+def runtime_source_errors(text):
+    targets = re.findall(r"\[[^]]+\]\(([^)]+)\)", text)
+    urls = {target for target in targets if urlsplit(target).scheme}
+    errors = list(urls ^ PINNED_SOURCES)
+    for target in targets:
+        parsed = urlsplit(target)
+        if parsed.scheme:
+            continue
+        path = (RUNTIME.parent / parsed.path).resolve()
+        if (parsed.netloc or parsed.query or Path(parsed.path).is_absolute()
+                or not path.is_relative_to(ROOT) or not path.is_file()):
+            errors.append(target)
+            continue
+        headings = re.findall(r"^#+\s+(.+)$", path.read_text(encoding="utf-8"), re.MULTILINE)
+        slugs = {re.sub(r"[^\w\s-]", "", h.lower()).replace(" ", "-") for h in headings}
+        if parsed.fragment and parsed.fragment not in slugs:
+            errors.append(target)
+    # Only exact reviewed public source URLs are exempt from the common privacy policy.
+    sanitized = text
+    for url in PINNED_SOURCES:
+        sanitized = sanitized.replace(url, "PUBLIC_SOURCE")
+    return errors + privacy_errors(sanitized)
+
+
+class RuntimeDeliveryContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = RUNTIME.read_text(encoding="utf-8")
+
+    def test_runtime_positive_and_reflow_control(self):
+        self.assertEqual(runtime_policy_errors(self.text), set())
+        self.assertEqual(runtime_policy_errors(self.text.swapcase().replace(" ", "  ")), set())
+
+    def test_runtime_deletion_and_reversal_mutations(self):
+        text = "\n\n".join(" ".join(p.split()) for p in self.text.split("\n\n"))
+        for key, required, unsafe in RUNTIME_POLICIES:
+            with self.subTest(policy=key):
+                self.assertEqual(text.count(required), 1)
+                for replacement in ("", unsafe):
+                    self.assertIn(key, runtime_policy_errors(text.replace(required, replacement, 1)))
+
+    def test_runtime_appended_contradictions(self):
+        for key, _, unsafe in RUNTIME_POLICIES:
+            with self.subTest(policy=key):
+                self.assertIn(key, runtime_policy_errors(self.text + "\n\n" + unsafe + "."))
+
+    def test_runtime_links_pinned_sources_and_privacy(self):
+        self.assertEqual(runtime_source_errors(self.text), [])
+
+    def test_runtime_source_deletion_unpinning_and_private_url_rejected(self):
+        for url in PINNED_SOURCES:
+            for replacement in ("", url.replace("5dc5548b4570b276f231d81fbb51f8f7a066e40d", "main"),
+                                "https://example.invalid/private"):
+                with self.subTest(url=url, replacement=replacement):
+                    self.assertTrue(runtime_source_errors(self.text.replace(url, replacement)))
+        for leak in ("/home/example/private", "msg_000000000000", "litellm/fictional/model",
+                     "token=synthetic", PIN + "unreviewed.ts"):
+            with self.subTest(leak=leak):
+                self.assertTrue(runtime_source_errors(self.text + "\n" + leak))
+
+    def test_runtime_relative_link_anchor_mutations(self):
+        targets = re.findall(r"\[[^]]+\]\(([^)]+)\)", self.text)
+        for target in targets:
+            if not urlsplit(target).scheme:
+                with self.subTest(target=target):
+                    self.assertTrue(runtime_source_errors(self.text.replace(target, target + "-missing")))
+
+    def test_runtime_placeholder_inventory(self):
+        self.assertEqual(set(re.findall(r"<[A-Z_]+>", self.text)),
+                         {"<ORCA>", "<OWNER_CHAT>", "<SELF>", "<WAIT_MS>",
+                          "<INCOMING_ID>", "<FINAL_BODY>"})
+
+
 if __name__ == "__main__":
     unittest.main()
