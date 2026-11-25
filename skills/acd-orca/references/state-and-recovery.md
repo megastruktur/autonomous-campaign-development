@@ -190,11 +190,28 @@ Run/task/attempt/revision, absolute UTC deadline and instruction to reconcile on
 scope. Configuration presence is not delivery proof; claims of autonomous supervision
 require observed native wake handling for the actual owner/environment.
 
-When waiting, end the turn. Do not consume mail in a script, poll files/Tasks in a loop,
-install an external watcher, emulate heartbeat, or run a background supervisor. A Run
-status file schedules nothing. Missing continuation capability blocks unattended claims;
-it is not permission to invent a substitute. No broad host-death or reboot-liveness
-promise follows from a native receipt.
+Workers using native `ask` end the turn until the correlated reply; genuine supervised
+work may yield under the actual active Dispatch exemption. A Bot owing an incoming
+question answer while awaiting a peer instead keeps its OWN bounded native wait open,
+following [native waiting](orca-runtime.md#native-communication-and-waiting) and the
+[common exception](../../../fleet/skills/fleet-campaign/references/common-contract.md#inbound-questions-and-bounded-waiting).
+Only actual `pending`/`dispatched` Dispatches created by that answering session qualify:
+the observed session-wide last-50 inspection is not per-request dependency tracking.
+An outbound question, registry or pending Task/Run does not qualify. Handoff still expects
+an answer and requires authorized ownership transfer; neither `NO_REPLY` nor prose
+registers pending work or answers a question. Do not create Dispatches to evade settlement.
+No observer consumes another mailbox; no script poller, external watcher, heartbeat
+emulation or second scheduler is authorized. A Run status file schedules nothing.
+Missing continuation capability blocks unattended claims, not permission to invent a
+substitute. No host-death or reboot-liveness promise follows from a native receipt.
+
+Freeze original absolute UTC `deadline_at` before delegation and forward it UNCHANGED
+each hop. Predeclare upstream relay/final-delivery reserve as PRIVATE POLICY, not native
+schema. Before each dispatch/wait subtract fresh current UTC and that reserve from the
+original deadline; refuse insufficient remaining budget, including subrequests, and bound
+each wait timeout to the remainder. No reset on wake, retry, recovery or late output.
+At the reserve cutoff issue one explicit bounded incomplete native answer with known,
+unknown and correlated pending facts, not a premature pending reply or renewed deadline.
 
 Persist absolute bounds before launch and read real UTC before **every affected dispatch
 or integration**, including retries and gate completion that would release dependent work.
@@ -234,6 +251,70 @@ Archive late output under its original binding; never apply it to a superseding 
 Remove only the campaign's obsolete timers on completion, cancellation, pause or needs-user
 state, recording removal/uncertainty. Ignore already-queued stale wakes for execution.
 An operator pause never self-resumes, even when a worker finishes or a deadline fires.
+
+On every wake/wait reconcile ALL correlated mail against project/request/revision,
+downstream message, exact candidate, independent critic, owner, pause/supersession and
+original deadline. Automatic no-answer is not proof of no child work. Notice, actual
+result, delivery and acceptance stay distinct. Late valid facts correct the durable record
+once while preserving the original expired/superseded outcome: never retro-PASS, resume
+or product admission. Planning delivery cannot grant product acceptance; critics remain
+independent non-contributors judging the exact candidate.
+
+## Durable final and correction delivery
+
+Before launch prebind a VERIFIED authorized durable owner conversation/source route
+independent of the disposable temporary starter. A missing authorized route blocks
+delivery: no invented recipient, sender spoof or disposed-terminal reopen. Native
+Run/Dispatch durability alone is NOT human delivery. Use one final native reply to the
+EXACT incoming native ID, not a downstream request. Preserve the actual native
+operation/message receipt and exact recipient/correlation READBACK. Distinguish accepted,
+stored and observed-delivered from human-read/unknown; storage alone does not prove a human read.
+Apply the [shared delivery contract](../../../fleet/skills/fleet-campaign/references/common-contract.md#native-answer-and-durable-source-delivery).
+
+A first late answer after `unanswered` is supported. After already `answered`, use supported
+NEW correlated informational mail, where admitted `send --type status --thread-id …`,
+with original request/revision plus a UNIQUE update ID; never a second reply. Retain prior
+final/history, expiry and supersession rather than rewrite failure into acceptance.
+
+The owner's private registry maps request + revision + delivery-kind/update identity to
+intent -> native operation/message ID -> receipt -> reconciliation, plus prior final/history.
+Resolve unknown outcomes before any resend. Native retry requires the exact PRINTED
+supported instruction and the same operation, not a fresh duplicate. This owner idempotency
+record is not a native API/schema or scheduler. Reserve, correlation, delivery distinctions
+and registry contents live behind existing private record/evidence pointers, not new Orca
+or template fields. Use only these existing seams:
+
+| Template | Existing field paths |
+|---|---|
+| PLANNING_STATE | `bounds.attempt.deadline_at`, `bounds.review_deadline_at`, `bounds.private_original_clocks_record`, `continuation.private_owner_and_native_record`, `continuation.pending_operations_evidence_id`, `handoff.execution_owner_private_record`, `handoff.handoff_receipt_evidence_id`, `evidence`, `history` |
+| STATE | `tasks[].attempt.deadline_at`, `tasks[].report.native_delivery_receipt_evidence_id`, `bounds.private_original_clocks_record`, `continuation.private_owner_and_native_record`, `continuation.pending_operations_evidence_id`, `operations`, `final.delivery_route`, `final.report_evidence_id`, `final.final_operation.receipt_evidence_id`, `evidence`, `history` |
+
+The final-operation receipt retains its actual authorized delivery meaning; do not replace
+an integration receipt with mail evidence or invent a merge. Index separate native mail
+receipts through the existing evidence/report pointers. Planning handoff records custody,
+not product admission. See [PLANNING_STATE](../templates/PLANNING_STATE.json) and
+[STATE](../templates/STATE.json); empty task collections use the existing collection shape.
+
+Synthetic reconciliation fixtures below are documentation examples ONLY, not native
+integration, delivery qualification or a runtime implementation. Each assumes verified
+request/revision/candidate/critic/owner binding; a mismatch stays historical, never current.
+
+| Synthetic case | Given evidence | Required disposition |
+|---|---|---|
+| Delayed result | Result arrives before reserve cutoff; no answer sent | Reconcile result; send one final answer with receipt/readback |
+| Automatic no-answer | Unanswered notice and real child result in same batch | Retain both; no claim of absent child work |
+| Duplicate | Same request/revision/update and native receipt repeated | Reconcile existing record; no duplicate send or dispatch |
+| Expired result | Valid critique arrives after original deadline | Correct record once; preserve expired outcome; no retro-PASS |
+| Superseded result | Valid critique belongs to replaced candidate/revision | Archive old binding; no resume or product admission |
+| Disposed starter, valid route | Starter closed; prebound authorized durable route exists | Use durable route with receipt/readback; never reopen starter |
+| Disposed starter, missing route | Starter closed; no authorized durable route | Delivery blocked; no invented recipient or reopen |
+| Unknown receipt | Intent recorded; native send outcome unknown | Reconcile same operation before resend; no delivery claim |
+
+Observed Orca 1.4.268 behavior is version-qualified, not an upstream-patch claim or new
+runtime guarantee: [late first answer](https://github.com/stablyai/orca/blob/5dc5548b4570b276f231d81fbb51f8f7a066e40d/src/main/runtime/orchestration/db/bot-requests/bot-request-outcomes.ts#L19-L48),
+[second-answer refusal](https://github.com/stablyai/orca/blob/5dc5548b4570b276f231d81fbb51f8f7a066e40d/src/main/runtime/rpc/methods/orchestration/messaging/reply-method.ts#L158-L185),
+[mailbox routing](https://github.com/stablyai/orca/blob/5dc5548b4570b276f231d81fbb51f8f7a066e40d/src/main/runtime/orchestration/mailbox/routing/structured-session-mail-address.ts#L147-L169)
+and [reply source route](https://github.com/stablyai/orca/blob/5dc5548b4570b276f231d81fbb51f8f7a066e40d/src/main/runtime/rpc/methods/orchestration/messaging/reply-follow-up.ts#L115-L147).
 
 ## Guarded settlement and duplicate prevention
 

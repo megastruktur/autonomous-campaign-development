@@ -426,5 +426,194 @@ class RuntimeDeliveryContractTests(unittest.TestCase):
                           "<INCOMING_ID>", "<FINAL_BODY>"})
 
 
+RECOVERY = ROOT / "skills/acd-orca/references/state-and-recovery.md"
+RECOVERY_WAIT = "native continuation and original clocks"
+RECOVERY_FINAL = "durable final and correction delivery"
+RECOVERY_SOURCES = {
+    PIN + path for path in (
+        "src/main/runtime/orchestration/db/bot-requests/bot-request-outcomes.ts#L19-L48",
+        "src/main/runtime/rpc/methods/orchestration/messaging/reply-method.ts#L158-L185",
+        "src/main/runtime/orchestration/mailbox/routing/structured-session-mail-address.ts#L147-L169",
+        "src/main/runtime/rpc/methods/orchestration/messaging/reply-follow-up.ts#L115-L147",
+    )
+}
+RECOVERY_POLICIES = (
+    (RECOVERY_WAIT, "Workers using native `ask` end the turn until the correlated reply; genuine supervised work may yield under the actual active Dispatch exemption",
+     "When waiting, end the turn"),
+    (RECOVERY_WAIT, "A Bot owing an incoming question answer while awaiting a peer instead keeps its OWN bounded native wait open",
+     "end the incoming question turn while awaiting a peer"),
+    (RECOVERY_WAIT, "Only actual `pending`/`dispatched` Dispatches created by that answering session qualify: the observed session-wide last-50 inspection is not per-request dependency tracking",
+     "pending Task/Run records qualify for the Dispatch exemption"),
+    (RECOVERY_WAIT, "An outbound question, registry or pending Task/Run does not qualify. Handoff still expects an answer and requires authorized ownership transfer; neither `NO_REPLY` nor prose registers pending work or answers a question. Do not create Dispatches to evade settlement",
+     "NO_REPLY and handoff automatically defer native settlement"),
+    (RECOVERY_WAIT, "No observer consumes another mailbox; no script poller, external watcher, heartbeat emulation or second scheduler is authorized",
+     "use an observer to consume another mailbox"),
+    (RECOVERY_WAIT, "Freeze original absolute UTC `deadline_at` before delegation and forward it UNCHANGED each hop",
+     "reset deadline_at on each hop"),
+    (RECOVERY_WAIT, "Predeclare upstream relay/final-delivery reserve as PRIVATE POLICY, not native schema",
+     "reserve is a new native schema field"),
+    (RECOVERY_WAIT, "Before each dispatch/wait subtract fresh current UTC and that reserve from the original deadline; refuse insufficient remaining budget, including subrequests, and bound each wait timeout to the remainder. No reset on wake, retry, recovery or late output",
+     "retry and recovery renew the original budget"),
+    (RECOVERY_WAIT, "At the reserve cutoff issue one explicit bounded incomplete native answer with known, unknown and correlated pending facts, not a premature pending reply or renewed deadline",
+     "send pending now and a second final reply later"),
+    (RECOVERY_WAIT, "On every wake/wait reconcile ALL correlated mail against project/request/revision, downstream message, exact candidate, independent critic, owner, pause/supersession and original deadline",
+     "reconcile only the first notice and ignore remaining mail"),
+    (RECOVERY_WAIT, "Automatic no-answer is not proof of no child work. Notice, actual result, delivery and acceptance stay distinct",
+     "automatic no-answer proves no child work"),
+    (RECOVERY_WAIT, "Late valid facts correct the durable record once while preserving the original expired/superseded outcome: never retro-PASS, resume or product admission. Planning delivery cannot grant product acceptance; critics remain independent non-contributors judging the exact candidate",
+     "late critique grants retro-PASS and product admission"),
+    (RECOVERY_FINAL, "Before launch prebind a VERIFIED authorized durable owner conversation/source route independent of the disposable temporary starter",
+     "use only the disposable starter as delivery route"),
+    (RECOVERY_FINAL, "A missing authorized route blocks delivery: no invented recipient, sender spoof or disposed-terminal reopen",
+     "reopen the disposed starter when the route is missing"),
+    (RECOVERY_FINAL, "Native Run/Dispatch durability alone is NOT human delivery. Use one final native reply to the EXACT incoming native ID, not a downstream request. Preserve the actual native operation/message receipt and exact recipient/correlation READBACK",
+     "native storage alone proves human delivery"),
+    (RECOVERY_FINAL, "Distinguish accepted, stored and observed-delivered from human-read/unknown; storage alone does not prove a human read",
+     "stored means human-read"),
+    (RECOVERY_FINAL, "A first late answer after `unanswered` is supported. After already `answered`, use supported NEW correlated informational mail, where admitted `send --type status --thread-id …`, with original request/revision plus a UNIQUE update ID; never a second reply",
+     "send a second reply after already answered"),
+    (RECOVERY_FINAL, "The owner's private registry maps request + revision + delivery-kind/update identity to intent -> native operation/message ID -> receipt -> reconciliation, plus prior final/history",
+     "deduplicate only by request and discard revision and update identity"),
+    (RECOVERY_FINAL, "Resolve unknown outcomes before any resend. Native retry requires the exact PRINTED supported instruction and the same operation, not a fresh duplicate",
+     "resend unknown outcomes with a fresh operation"),
+    (RECOVERY_FINAL, "This owner idempotency record is not a native API/schema or scheduler. Reserve, correlation, delivery distinctions and registry contents live behind existing private record/evidence pointers, not new Orca or template fields",
+     "add registry and reserve fields to the native schema"),
+    (RECOVERY_FINAL, "do not replace an integration receipt with mail evidence or invent a merge",
+     "replace integration receipts with mail evidence"),
+    (RECOVERY_FINAL, "Synthetic reconciliation fixtures below are documentation examples ONLY, not native integration, delivery qualification or a runtime implementation",
+     "synthetic fixtures prove native delivery qualification"),
+    (RECOVERY_FINAL, "Observed Orca 1.4.268 behavior is version-qualified, not an upstream-patch claim or new runtime guarantee",
+     "this documentation guarantees runtime recovery"),
+)
+
+
+def recovery_policy_errors(text):
+    bodies = sections(text)
+    flat = " ".join(text.split()).casefold()
+    errors = set()
+    for heading, required, unsafe in RECOVERY_POLICIES:
+        if (required.casefold() not in bodies.get(heading, "").casefold()
+                or re.search(r"(?:^|[.!?]\s+)" + re.escape(unsafe.casefold()), flat)):
+            errors.add(required)
+    return errors
+
+
+# These are documentary evidence/disposition pairs, NOT a state machine or sender.
+# Swapping a disposition across rows must fail even when all policy keywords survive.
+RECOVERY_CASES = (
+    ("Delayed result", "Result arrives before reserve cutoff; no answer sent",
+     "Reconcile result; send one final answer with receipt/readback"),
+    ("Automatic no-answer", "Unanswered notice and real child result in same batch",
+     "Retain both; no claim of absent child work"),
+    ("Duplicate", "Same request/revision/update and native receipt repeated",
+     "Reconcile existing record; no duplicate send or dispatch"),
+    ("Expired result", "Valid critique arrives after original deadline",
+     "Correct record once; preserve expired outcome; no retro-PASS"),
+    ("Superseded result", "Valid critique belongs to replaced candidate/revision",
+     "Archive old binding; no resume or product admission"),
+    ("Disposed starter, valid route", "Starter closed; prebound authorized durable route exists",
+     "Use durable route with receipt/readback; never reopen starter"),
+    ("Disposed starter, missing route", "Starter closed; no authorized durable route",
+     "Delivery blocked; no invented recipient or reopen"),
+    ("Unknown receipt", "Intent recorded; native send outcome unknown",
+     "Reconcile same operation before resend; no delivery claim"),
+)
+
+
+def recovery_fixture_errors(text):
+    rows = [tuple(cell.strip() for cell in line.strip().strip("|").split("|"))
+            for line in text.splitlines() if line.startswith("| ")]
+    return {case for case in RECOVERY_CASES if rows.count(case) != 1}
+
+
+def recovery_source_errors(text):
+    # Runtime and recovery are sibling references. Reuse link validation without
+    # broadening either document's exact public-URL allowlist or common privacy rules.
+    urls = set(re.findall(r"https?://[^\s)]+", text))
+    errors = list(urls ^ RECOVERY_SOURCES)
+    adapted = text
+    for url in RECOVERY_SOURCES:
+        adapted = re.sub(r"\[[^]]+\]\(" + re.escape(url) + r"\)", "PUBLIC_SOURCE", adapted)
+    adapted += "\n" + "\n".join("[source](" + url + ")" for url in PINNED_SOURCES)
+    return errors + runtime_source_errors(adapted)
+
+
+class RecoveryDeliveryContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.text = RECOVERY.read_text(encoding="utf-8")
+
+    def test_recovery_positive_and_reflow(self):
+        self.assertEqual(recovery_policy_errors(self.text), set())
+        self.assertEqual(recovery_policy_errors(self.text.swapcase().replace(" ", "  ")), set())
+
+    def test_recovery_deletion_reversal_and_appended_contradiction(self):
+        text = "\n\n".join(" ".join(p.split()) for p in self.text.split("\n\n"))
+        for _, required, unsafe in RECOVERY_POLICIES:
+            with self.subTest(policy=required):
+                self.assertEqual(text.count(required), 1)
+                for mutation in (text.replace(required, "", 1),
+                                 text.replace(required, unsafe, 1), text + ". " + unsafe):
+                    self.assertIn(required, recovery_policy_errors(mutation))
+
+    def test_synthetic_reconciliation_table(self):
+        self.assertEqual(recovery_fixture_errors(self.text), set())
+        for case in RECOVERY_CASES:
+            name, evidence, disposition = case
+            with self.subTest(case=name):
+                row = "| " + " | ".join(case) + " |"
+                self.assertIn(case, recovery_fixture_errors(self.text.replace(row, "")))
+                self.assertIn(case, recovery_fixture_errors(self.text + "\n" + row))
+                self.assertIn(case, recovery_fixture_errors(self.text.replace(disposition, "Claim PASS")))
+
+    def test_synthetic_dispositions_cannot_cross_evidence_bindings(self):
+        for index, case in enumerate(RECOVERY_CASES):
+            other = RECOVERY_CASES[(index + 1) % len(RECOVERY_CASES)]
+            with self.subTest(case=case[0]):
+                changed = self.text.replace(case[2], "SWAP").replace(other[2], case[2]).replace("SWAP", other[2])
+                self.assertTrue({case, other}.issubset(recovery_fixture_errors(changed)))
+
+    def test_recovery_sources_links_privacy(self):
+        self.assertEqual(recovery_source_errors(self.text), [])
+        for url in RECOVERY_SOURCES:
+            for replacement in ("", url.replace("5dc5548b4570b276f231d81fbb51f8f7a066e40d", "main")):
+                with self.subTest(url=url):
+                    self.assertTrue(recovery_source_errors(self.text.replace(url, replacement)))
+        for leak in ("/home/example/private", "msg_000000000000", "token=synthetic"):
+            self.assertTrue(recovery_source_errors(self.text + "\n" + leak))
+
+    def test_existing_template_seams_resolve_without_new_fields(self):
+        import json
+
+        expected = {
+            "PLANNING_STATE": {
+                "bounds.attempt.deadline_at", "bounds.review_deadline_at",
+                "bounds.private_original_clocks_record", "continuation.private_owner_and_native_record",
+                "continuation.pending_operations_evidence_id", "handoff.execution_owner_private_record",
+                "handoff.handoff_receipt_evidence_id", "evidence", "history",
+            },
+            "STATE": {
+                "tasks[].attempt.deadline_at", "tasks[].report.native_delivery_receipt_evidence_id",
+                "bounds.private_original_clocks_record", "continuation.private_owner_and_native_record",
+                "continuation.pending_operations_evidence_id", "operations", "final.delivery_route",
+                "final.report_evidence_id", "final.final_operation.receipt_evidence_id", "evidence", "history",
+            },
+        }
+        for name, paths in expected.items():
+            row = next(line for line in self.text.splitlines() if line.startswith("| " + name + " |"))
+            self.assertEqual(set(re.findall(r"`([^`]+)`", row)), paths)
+            document = json.loads((ROOT / "skills/acd-orca/templates" / (name + ".json")).read_text())
+            for path in paths:
+                with self.subTest(template=name, path=path):
+                    node = document
+                    for part in path.split("."):
+                        if part == "tasks[]":
+                            self.assertIsInstance(document["tasks"], list)
+                            node = document["_template"]["collection_shapes"]["tasks"]
+                        else:
+                            self.assertIn(part, node)
+                            node = node[part]
+
+
 if __name__ == "__main__":
     unittest.main()
