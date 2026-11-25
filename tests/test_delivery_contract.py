@@ -741,5 +741,74 @@ class InstallerQualificationContractTests(unittest.TestCase):
                 self.assertTrue(installer_link_errors(text))
 
 
+REVIEWED_ENTRY_REVISION = "df8ed09acfbb612e7bc9dfb7649ef9903d662f55"
+OLD_ENTRY_REVISION = "6016d52b1daf0b15b0848da9978a301731290c9d"
+
+
+def publication_pin_errors(text):
+    body = sections(text).get("install with your agent prompt", "")
+    guide_pins = re.findall(
+        r"https://raw\.githubusercontent\.com/megastruktur/autonomous-campaign-development/"
+        r"([0-9a-f]{40})/docs/INSTALL_AGENT\.md(?=\s)", body)
+    source_pins = re.findall(r"\bsource_revision=([0-9a-f]{40})(?=;|\s)", body)
+    errors = set()
+    if guide_pins != [REVIEWED_ENTRY_REVISION]:
+        errors.add("guide-pin")
+    if source_pins != [REVIEWED_ENTRY_REVISION]:
+        errors.add("source-pin")
+    if guide_pins != source_pins:
+        errors.add("pin-mismatch")
+    return errors
+
+
+class PublicationEntryContractTests(unittest.TestCase):
+    """Local immutable Git blobs only; never public HTTP or installation proof."""
+
+    @classmethod
+    def setUpClass(cls):
+        import os
+
+        cls.text = (ROOT / "README.md").read_text(encoding="utf-8")
+        cls.git_env = {**os.environ, "GIT_NO_LAZY_FETCH": "1", "GIT_TERMINAL_PROMPT": "0"}
+        cls.contracts = (
+            (CONTRACT, policy_errors), (RUNTIME, runtime_policy_errors),
+            (RECOVERY, recovery_policy_errors), (INSTALLER, installer_policy_errors),
+        )
+
+    def blob(self, revision, path):
+        import subprocess
+
+        return subprocess.check_output(
+            ["git", "-C", str(ROOT), "show", f"{revision}:{path.relative_to(ROOT).as_posix()}"],
+            env=self.git_env, text=True, encoding="utf-8", timeout=10)
+
+    def test_publication_pins_bind_exact_reviewed_tree(self):
+        self.assertEqual(publication_pin_errors(self.text), set())
+
+    def test_old_mismatched_missing_and_mutable_pins_fail(self):
+        for replacement in (OLD_ENTRY_REVISION, "main", "0" * 40, ""):
+            with self.subTest(replacement=replacement):
+                self.assertTrue(publication_pin_errors(self.text.replace(REVIEWED_ENTRY_REVISION, replacement)))
+        for marker in ("/" + REVIEWED_ENTRY_REVISION + "/", "source_revision=" + REVIEWED_ENTRY_REVISION):
+            with self.subTest(marker=marker):
+                mutated = self.text.replace(marker, marker.replace(REVIEWED_ENTRY_REVISION, OLD_ENTRY_REVISION))
+                self.assertIn("pin-mismatch", publication_pin_errors(mutated))
+
+    def test_reviewed_local_blobs_satisfy_all_four_contracts(self):
+        for path, validator in self.contracts:
+            with self.subTest(path=str(path.relative_to(ROOT))):
+                self.assertEqual(validator(self.blob(REVIEWED_ENTRY_REVISION, path)), set())
+
+    def test_old_local_blobs_fail_each_repaired_contract(self):
+        for path, validator in self.contracts:
+            with self.subTest(path=str(path.relative_to(ROOT))):
+                self.assertTrue(validator(self.blob(OLD_ENTRY_REVISION, path)))
+
+    def test_readme_diff_is_exactly_two_pin_replacements(self):
+        previous = self.blob(REVIEWED_ENTRY_REVISION, ROOT / "README.md")
+        self.assertEqual(previous.count(OLD_ENTRY_REVISION), 2)
+        self.assertEqual(self.text, previous.replace(OLD_ENTRY_REVISION, REVIEWED_ENTRY_REVISION))
+
+
 if __name__ == "__main__":
     unittest.main()
