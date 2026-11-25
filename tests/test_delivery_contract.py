@@ -615,5 +615,131 @@ class RecoveryDeliveryContractTests(unittest.TestCase):
                             node = node[part]
 
 
+INSTALLER = ROOT / "docs/INSTALL_AGENT.md"
+INSTALLER_QUALIFICATION = "6. report readiness, qualify only authorized missing scope"
+INSTALLER_LOADING = "5. obtain actual loading evidence without starting work"
+INSTALLER_POLICIES = (
+    (INSTALLER_QUALIFICATION, "Inventory actual engine/version/runtime and effective primary, auxiliary PURPOSES and FALLBACK routes using supported help/source/config/runtime evidence",
+     "inventory only the primary route"),
+    (INSTALLER_QUALIFICATION, "Never assume a judge maps to smol. Include latent role/task/commit/plan and fallback routes only as actually supported; healthy primary output does not prove auxiliary/fallback health",
+     "a healthy primary qualifies every auxiliary and fallback route"),
+    (INSTALLER_QUALIFICATION, "Unknown, cached or unexercised routes stay UNTESTED; nonapplicable roles need evidence",
+     "unexercised routes are healthy by default"),
+    (INSTALLER_QUALIFICATION, "Separate quota/usage exhaustion 429 from temporary rate limiting by reason and Retry-After evidence; missing or conflicting evidence is unknown, not permission to retry",
+     "every 429 is temporary and safe to retry"),
+    (INSTALLER_QUALIFICATION, "Only temporary limits permit bounded supported retry within the original authorized deadline/budget; never retry exhausted quota into success",
+     "retry exhausted quota until success with a renewed deadline"),
+    (INSTALLER_QUALIFICATION, "Qualify meaningful semantic purpose-specific output/schema/completion/tool roundtrip where relevant, not HTTP200, non429 or a main reply",
+     "HTTP200 alone qualifies the route"),
+    (INSTALLER_QUALIFICATION, "Truncation, empty output and incompatible provider/model semantics fail; retain abort, schema and fallback errors separately",
+     "truncated or empty output qualifies when HTTP200"),
+    (INSTALLER_QUALIFICATION, "Record requested/resolved/observed identity, purpose/route and timestamp proof privately; no promise of no future 429",
+     "one success guarantees no future 429"),
+    (INSTALLER_QUALIFICATION, "Paid probes require explicit scoped spend/context authority; this documentation slice performs none",
+     "run paid probes automatically during installation"),
+    (INSTALLER_QUALIFICATION, "Before ANY proposed configuration repair, produce an exact scoped config diff and impact inventory, including shared/default coupling to UNPINNED primaries, other roles/consumers and fallback routes",
+     "repair the default role without inspecting unpinned primaries"),
+    (INSTALLER_QUALIFICATION, "Preserve pinned primary identity and unrelated consumers/permissions/settings",
+     "replace healthy pinned primaries to simplify auxiliary repair"),
+    (INSTALLER_QUALIFICATION, "Obtain separate authorization for that actual scope, retain a backup and exact comparison-guarded rollback, then postwrite readback and ACTUAL consuming-session adoption evidence through supported authorized reload/restart if needed",
+     "write configuration before scope authorization and treat readback as adoption"),
+    (INSTALLER_QUALIFICATION, "Compare current content with the recorded applied version and backup with the original before rollback; mismatch stops restoration",
+     "restore the backup even when current configuration changed"),
+    (INSTALLER_QUALIFICATION, "Configuration-only evidence is neither adopted nor healthy; requalify the affected purpose after adoption within authorized bounds",
+     "configuration readback proves the consuming session is healthy"),
+    (INSTALLER_QUALIFICATION, "Never silently change global/provider/model/temperature settings, hide models, disable memory or rewrite quota/accounts. Missing scope stops the affected operation; no workaround or unrelated-worker interruption",
+     "missing scope permits a global settings workaround"),
+    (INSTALLER_QUALIFICATION, "Existing Bot upgrades require fresh own-session actual source/context reads of the updated complete relevant skill/common/runtime/recovery instructions with exact source identity, not symlink target/config/catalog/acknowledgment or inherited read receipts alone",
+     "a changed symlink or acknowledgment proves upgrade adoption"),
+    (INSTALLER_QUALIFICATION, "The legitimate owner uses only the existing designated Home and owner-only loading; no peer message, new Home/Run/campaign or permission expansion",
+     "create a new Home and message peers to prove loading"),
+    (INSTALLER_QUALIFICATION, "Adoption must include own bounded incoming-question waits, unchanged original deadline/reserve, all-mail reconciliation and one-answer/durable-source receipt rules; reading these contracts grants no mail operation or delivery qualification",
+     "reading the delivery contract qualifies native delivery"),
+    (INSTALLER_QUALIFICATION, "Setup-only remains setup-only; live migration, reload/restart and spend each require separate applicable authority",
+     "setup approval authorizes live migration and paid probes"),
+    (INSTALLER_LOADING, "bound filesystem bridge/common contract and complete relevant runtime/recovery instructions",
+     "skip runtime and recovery instructions during upgrade"),
+    (INSTALLER_LOADING, "Provide fresh own-session read-tool evidence of exact source paths and revision/hash, including updated instructions in this consuming session's actual context",
+     "reuse the parent's read receipts as current session adoption"),
+    (INSTALLER_LOADING, "Catalog discovery, symlink targets, configuration, inherited receipts and acknowledgment text do not prove loading or adoption",
+     "catalog discovery proves loading and adoption"),
+)
+INSTALLER_LINKS = {
+    "../fleet/skills/fleet-campaign/references/common-contract.md#purpose-specific-model-qualification",
+    "../fleet/skills/fleet-campaign/references/common-contract.md#inbound-questions-and-bounded-waiting",
+    "../fleet/skills/fleet-campaign/references/common-contract.md#native-answer-and-durable-source-delivery",
+    "../skills/acd-orca/references/orca-runtime.md#native-communication-and-waiting",
+    "../skills/acd-orca/references/state-and-recovery.md#native-continuation-and-original-clocks",
+    "../skills/acd-orca/references/state-and-recovery.md#durable-final-and-correction-delivery",
+}
+
+
+def installer_policy_errors(text):
+    bodies = sections(text)
+    flat = " ".join(text.split()).casefold()
+    return {required for heading, required, unsafe in INSTALLER_POLICIES
+            if required.casefold() not in bodies.get(heading, "").casefold()
+            or re.search(r"(?:^|[.!?]\s+)" + re.escape(unsafe.casefold()), flat)}
+
+
+def installer_link_errors(text):
+    body = sections(text).get(INSTALLER_QUALIFICATION, "")
+    targets = set(re.findall(r"\[[^]]+\]\(([^)]+)\)", body))
+    errors = list(INSTALLER_LINKS - targets)
+    for target in targets:
+        parsed = urlsplit(target)
+        path = (INSTALLER.parent / parsed.path).resolve()
+        if (parsed.scheme or parsed.netloc or parsed.query or Path(parsed.path).is_absolute()
+                or not path.is_relative_to(ROOT) or not path.is_file()):
+            errors.append(target)
+            continue
+        headings = re.findall(r"^#+\s+(.+)$", path.read_text(encoding="utf-8"), re.MULTILINE)
+        slugs = {re.sub(r"[^\w\s-]", "", h.lower()).replace(" ", "-") for h in headings}
+        if parsed.fragment and parsed.fragment not in slugs:
+            errors.append(target)
+    # Existing install paths elsewhere remain legitimate; the new portable policy
+    # needs neither concrete identities nor home paths nor public provider URLs.
+    return errors + privacy_errors(body)
+
+
+class InstallerQualificationContractTests(unittest.TestCase):
+    """Document mutations only, not installation, provider or native qualification."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.text = INSTALLER.read_text(encoding="utf-8")
+
+    def test_installer_policy_positive_and_reflow(self):
+        self.assertEqual(installer_policy_errors(self.text), set())
+        self.assertEqual(installer_policy_errors(self.text.swapcase().replace(" ", "  ")), set())
+
+    def test_installer_clause_deletions_and_dangerous_replacements(self):
+        text = "\n\n".join(" ".join(p.split()) for p in self.text.split("\n\n"))
+        for _, required, unsafe in INSTALLER_POLICIES:
+            with self.subTest(policy=required):
+                self.assertEqual(text.count(required), 1)
+                for replacement in ("", unsafe):
+                    self.assertIn(required, installer_policy_errors(text.replace(required, replacement, 1)))
+
+    def test_installer_contradictions_cannot_hide_behind_required_clauses(self):
+        for _, required, unsafe in INSTALLER_POLICIES:
+            with self.subTest(policy=required):
+                self.assertIn(required, installer_policy_errors(self.text + "\n\n" + unsafe + "."))
+
+    def test_installer_upgrade_links_and_portable_policy(self):
+        self.assertEqual(installer_link_errors(self.text), [])
+        for target in INSTALLER_LINKS:
+            for replacement in ("", target + "-missing"):
+                with self.subTest(target=target, replacement=replacement):
+                    self.assertTrue(installer_link_errors(self.text.replace(target, replacement)))
+
+    def test_installer_new_policy_rejects_private_examples(self):
+        for leak in ("/home/example/private", "msg_000000000000", "litellm/fictional/model",
+                     "token=synthetic", "https://example.invalid/provider"):
+            with self.subTest(leak=leak):
+                text = self.text.replace("## 7.", leak + "\n\n## 7.", 1)
+                self.assertTrue(installer_link_errors(text))
+
+
 if __name__ == "__main__":
     unittest.main()
