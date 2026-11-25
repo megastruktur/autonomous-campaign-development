@@ -163,12 +163,68 @@ coordinator answers through native reply to the exact message ID when authorized
 through a local prompt the worker cannot receive. Mail is from the actual agent, never
 a forged owner decision.
 
-A native wake carrying a complete message is acted on directly. If it explicitly names
-a `check` command for the recipient's own mailbox, that recipient runs it once and
-handles the result. Do not consume another actor's mail, run scripted mailbox consumers,
-repeated checks, sleep loops, external watchers, cron bridges, heartbeat emulation or
-background supervisors. When waiting on native work or input, end the turn. Run/status
-files are records, not schedulers; missing native continuation blocks unattended claims.
+A Bot owing an incoming question reply while awaiting a nested Bot question is different:
+an outbound question is not supervised Dispatch work. In Orca 1.4.268, actual
+`pending`/`dispatched` Dispatches created by the answering session can suppress turn-end
+`unanswered` settlement. This is a session-wide last-50 Dispatch inspection, not guaranteed
+per-request dependency tracking. A pending Task/Run/registry cannot substitute; do not
+create Dispatches to evade the rule. `NO_REPLY` and ordinary prose neither register pending
+work nor answer the incoming question. Handoff changes actual authorized job ownership
+but still expects an answer; it is not an automatic fix or deferred-question flag.
+
+For finite Bot chains keep the incoming reply slot available: no premature pending native
+reply followed by an expected second final. Keep the answering turn open with your OWN
+bounded native wait. The installed check/reply help supports these forms:
+
+```text
+<ORCA> orchestration check --terminal <SELF> --wait --timeout-ms <WAIT_MS> --json
+<ORCA> orchestration reply --id <INCOMING_ID> --body "<FINAL_BODY>" --json
+```
+
+`<SELF>` is this answering agent's verified runtime-issued terminal/mailbox handle, never
+another actor's identity. `<WAIT_MS>` is a positive integer number of milliseconds no
+greater than the freshly computed remaining budget. `<INCOMING_ID>` is the exact incoming
+question message ID, not its downstream peer request. `<FINAL_BODY>` is the correlated
+bounded final answer, shell-quoted for the current shell; use supported `--body-file` for
+content requiring safer quoting. Reply uses the actual bound sender; never forge `--from`.
+No observer consumes another mailbox, script/sleep pollers, external watchers, new timers
+or interruption are authorized by this wait. Run/status files remain records, not
+schedulers; missing native continuation blocks unattended claims.
+
+Before delegation freeze the original absolute UTC `deadline_at`; forward it unchanged
+each hop. Declare upstream relay/final-delivery reserve before work as policy, not schema.
+Before each dispatch and every wait recompute `deadline_at - current UTC - reserve`.
+Refuse insufficient-budget dispatch or subrequest; the wait timeout must fit that remaining
+budget. Native waiting never waives deadlines. At the reserve cutoff produce ONE explicit
+bounded final native answer to the incoming ID: known/unknown facts and correlated pending
+work, not invented absence of child work. There is no renewed deadline. Preserve the
+native receipt and source-owner correlation under the
+[shared delivery contract](../../../fleet/skills/fleet-campaign/references/common-contract.md#native-answer-and-durable-source-delivery).
+Reconcile an unknown reply outcome before retry; do not consume a second answer slot.
+
+Every native wake/wait reconciles ALL correlated returned messages, including automatic
+`unanswered` and late substantive answers, not only the first status/type. A complete
+native wake is acted on directly; a wake naming an own-mailbox check is handled by that
+recipient. Check's `--types` controls the wait's wake condition, not the consumed FIFO
+batch contents. No-answer is a turn outcome, not proof that no child worked. Preserve
+project/request/revision/candidate/critic/owner/supersession/deadline bindings. A first late
+answer after `unanswered` is supported; a second answer after `answered` is not. Use a new
+correlated informational update under the common contract and
+[guarded recovery](state-and-recovery.md#guarded-settlement-and-duplicate-prevention)
+instead. Duplicate notices never justify duplicate dispatch or delivery. Late evidence
+never retro-passes the cutoff or resumes superseded work; retain original expiry under
+[original clocks](state-and-recovery.md#native-continuation-and-original-clocks).
+
+These observed limitations are version-qualified, not an upstream patch claim or runtime
+guarantee. Pinned public sources for Orca 1.4.268:
+- [Turn end](https://github.com/stablyai/orca/blob/5dc5548b4570b276f231d81fbb51f8f7a066e40d/src/main/bots/bot-turn-ended.ts#L24-L35)
+  and [Dispatch settlement](https://github.com/stablyai/orca/blob/5dc5548b4570b276f231d81fbb51f8f7a066e40d/src/main/runtime/rpc/methods/orchestration/messaging/bot-request-outcome.ts#L109-L166).
+- [First answer](https://github.com/stablyai/orca/blob/5dc5548b4570b276f231d81fbb51f8f7a066e40d/src/main/runtime/orchestration/db/bot-requests/bot-request-outcomes.ts#L19-L48)
+  and [second-answer refusal](https://github.com/stablyai/orca/blob/5dc5548b4570b276f231d81fbb51f8f7a066e40d/src/main/runtime/rpc/methods/orchestration/messaging/reply-method.ts#L158-L185).
+- [Question/handoff purpose](https://github.com/stablyai/orca/blob/5dc5548b4570b276f231d81fbb51f8f7a066e40d/src/main/bots/bot-request-policy.ts#L7-L14)
+  and [quiet output](https://github.com/stablyai/orca/blob/5dc5548b4570b276f231d81fbb51f8f7a066e40d/src/shared/bot-quiet-result.ts#L3-L16).
+- [Wait schema](https://github.com/stablyai/orca/blob/5dc5548b4570b276f231d81fbb51f8f7a066e40d/src/shared/rpc-contract/orchestration/orchestration-params.ts#L30-L79)
+  and [native wait implementation](https://github.com/stablyai/orca/blob/5dc5548b4570b276f231d81fbb51f8f7a066e40d/src/main/runtime/rpc/methods/orchestration/messaging/check-direct.ts#L75-L104).
 
 ## Exact-owner deadlines
 
@@ -260,7 +316,9 @@ The planned [OMP](engines/omp.md), [Hermes](engines/hermes.md) and
 checklist. All three, plus [validation tabletops](validation-tabletop.md), are **PENDING**
 future targets at this slice. Final cross-document review must resolve links and reconcile
 native/gate/model fields at exact current hashes; file existence is not independent
-acceptance. `<ORCA>` and `<OWNER_CHAT>` are the only placeholders in this reference.
+acceptance. The placeholders are `<ORCA>` (verified executable), `<OWNER_CHAT>` (verified
+coordinator chat), and the waiting example's `<SELF>`, `<WAIT_MS>`, `<INCOMING_ID>` and
+`<FINAL_BODY>` defined above; none is a literal runtime identity or command argument.
 
 The [obligation ledger](obligation-ledger.md#reference-obligations) preserves the
 [legacy operational mechanics](../../acd/references/hermes-orca-omp.md) and

@@ -30,6 +30,70 @@ duplicate work or a competing execution Run. Reconcile recorded state before dis
 Native mail steers agents; return one substantive correlated reply to the source channel
 (owner chat or authorized Issue), not acknowledgment loops.
 
+## Inbound questions and bounded waiting
+
+An inbound Bot question awaiting a peer question is not genuine supervised Dispatch work.
+`unanswered` is a turn outcome, neither pending registration nor proof the child did not
+work. `NO_REPLY` is quiet output, not waiting registration or a native answer; ordinary
+assistant prose is not a native answer either. Handoff transfers responsibility only
+when authorized and still expects an answer; it is not a deferred-question flag.
+Only actual active Dispatches created by the answering session support the supervised
+end-turn exemption; a fake pending Task/Run or registry entry cannot substitute for them.
+Do not assume that exemption tracks each request's dependencies exactly.
+
+While owing an inbound answer and awaiting a peer, keep the answering turn open with
+your own bounded native `orchestration check --wait --timeout-ms …`, using the installed
+interface and your verified mailbox identity. No external polling or observer may consume
+another mailbox. This common exception governs blanket end-turn advice in
+[native communication and waiting](../../../../skills/acd-orca/references/orca-runtime.md#native-communication-and-waiting)
+and [native continuation and original clocks](../../../../skills/acd-orca/references/state-and-recovery.md#native-continuation-and-original-clocks)
+until those specialized references are updated. It does not change worker `ask` or genuine
+supervised Dispatch end-turn behavior, create a native pending flag or authorize workers.
+
+## Original deadline and reconciliation
+
+Before delegation, freeze the original absolute UTC `deadline_at` and forward it unchanged
+at every hop. Declare the upstream relay/final-delivery reserve before work; reserve is
+policy, not a native schema field. Compute remaining budget as `deadline_at - current UTC
+- declared upstream relay/final-delivery reserve`. Refuse insufficient-budget dispatch,
+including a subrequest that cannot finish within that budget; each native wait timeout
+must fit the remaining budget. Recompute before each dispatch or wait; no clock reset
+on wakes, retries, recovery or late results. At cutoff report bounded incompleteness with
+known and unknown facts, not invented absence of peer work or a renewed deadline.
+
+On each wake reconcile all correlated notices/results, not just the first status, against
+project/request/revision, downstream message, exact candidate and independent critic
+bindings, current owner, pause/supersession state and original expiry. Keep an unanswered
+notice, substantive result and acceptance separate. Duplicate notices cannot launch another
+critic; late critique never resumes superseded work, changes candidate binding or grants
+retro-PASS. Preserve the original expired outcome even when correcting the evidence.
+
+## Native answer and durable source delivery
+
+One request has one native answer. Do not consume it with a premature pending reply and
+expect a second final reply. Before delegation prebind an authorized durable owner source
+route independent of the disposable terminal, retaining source-owner and request/revision
+correlation. Native Run/Dispatch mailbox durability alone is not human delivery. Do not
+reopen a disposed terminal, impersonate a sender or silently select another owner; an
+unavailable authorized route leaves delivery explicitly blocked.
+
+A first late native answer may reconcile `unanswered`; once answered, use a supported new
+correlated informational update to the prebound route, not a second reply. Where admitted,
+native `send --type status --thread-id …` carries the original correlation and a distinct
+update identity; resolve installed support rather than invent an API. Preserve original
+expiry and supersession in the update: correction is not retro-PASS or new work authority.
+Require an actual native receipt plus exact recipient/correlation readback before claiming
+delivery. Distinguish accepted, stored and observed-delivered evidence; human-read remains
+unknown without separate evidence. A claimed correction in prose is not a delivery receipt.
+
+Keep an idempotent private final/update record keyed by request + revision + kind/update
+identity, retaining intent, native operation/message receipt, reconciliation status and
+prior final. Reconcile unknown outcomes before retry using
+[guarded settlement and duplicate prevention](../../../../skills/acd-orca/references/state-and-recovery.md#guarded-settlement-and-duplicate-prevention)
+and the receipt's supported recovery, not a fresh duplicate send. This record is not a
+scheduler, ownership transfer or durable human-delivery guarantee; no new native pending
+flags are implied.
+
 ## Trusted intake
 
 Trusted owner configuration binds the repository, allowed actor and event; the bounded
@@ -78,6 +142,25 @@ facts and runtime bindings in private project artifacts, not shared Bot memory o
 skills. Do not export live memory/chats/accounts/runtime databases. Public sharing needs
 separate authority. Do not change live Bots, installed skills, models, connectors or history
 through this documentation contract; unrelated campaigns remain unchanged.
+
+## Purpose-specific model qualification
+
+Inventory actual primary and purpose-specific auxiliary routes plus fallback paths.
+Inspect effective runtime/version/backend-specific role mapping; do not assume auxiliary
+means `smol`. A shared/default role can affect unpinned primaries and other consumers:
+identify that scope and obtain authorization before a local compatible-route repair.
+Retain rollback and healthy explicit primaries/fallbacks. This documentation grants no
+live configuration authority: no global quota/account rewrite, model hiding, memory
+disable or unapproved role changes.
+
+Separate quota/usage exhaustion 429 from temporary rate limiting using reason evidence,
+not the HTTP status alone. Only bounded supported retry is allowed when the reason permits
+it and the original budget permits it; exhaustion is not an invitation to retry blindly.
+Verify semantic useful purpose-specific output, including schema validation, completion
+and tool roundtrip where relevant, not HTTP 200, a main answer or non-429 alone. Truncation,
+abort, schema and fallback errors remain separate outcomes. Cache hits or no observed
+purpose are UNTESTED. Timestamp exact purpose/model/route proof privately; a success at
+one timestamp does not promise future absence of 429.
 
 ## Setup-only default
 
