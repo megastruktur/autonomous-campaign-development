@@ -1282,9 +1282,10 @@ class ReadmeLandingTests(unittest.TestCase):
         cls.blocks = re.findall(r"^```bash\n(.*?)^```", cls.text, re.MULTILINE | re.DOTALL)
 
     def test_simple_overview_navigation_setup_and_usage(self):
-        self.assertLessEqual(len(self.text.splitlines()), 115)
+        self.assertLessEqual(len(self.text.splitlines()), 125)
         self.assertEqual(re.findall(r"^## (.+)$", self.text, re.MULTILINE),
-                         ["Install with your agent prompt", "Installation", "Basic setup", "Usage"])
+                         ["Install with your agent prompt", "Installation", "Basic setup",
+                          "Onboard a new project Bot with your agent", "Usage"])
         opening = self.text.split("\n\n", 1)[1].split("[Setup]", 1)[0].strip()
         self.assertIn(len(opening.split("\n\n")), (1, 2))
         for marker in ("PROJECT Bot", "CSV export", "shared planners", "independent critics",
@@ -1292,7 +1293,8 @@ class ReadmeLandingTests(unittest.TestCase):
             self.assertIn(marker, opening)
         navigation = self.text.split("## Install with your agent prompt", 1)[0]
         self.assertLessEqual(len(navigation.splitlines()), 15)
-        for marker in ("[Setup]", "[GitHub Issues]", "[Roles]", "[Operations]", "[Agent guide]", "[Public repository]"):
+        for marker in ("[Setup]", "[GitHub Issues]", "[Roles]", "[Operations]", "[Agent guide]",
+                       "[Bot onboarding]", "[Public repository]"):
             self.assertIn(marker, navigation)
         for marker in ("five shared Bots once", "one project Magos per repository",
                        "no extra Magos Fleet Bot", "do not manually hand off",
@@ -1354,6 +1356,42 @@ class ReadmeLandingTests(unittest.TestCase):
         self.assertIn("public fetch availability is not asserted here", section)
         self.assertIn("Linux execution host with Bash/GNU tools", self.text)
         self.assertIn("adaptations are not qualified by these examples", self.text)
+
+    def test_onboard_prompt_pins_canonical_guide_and_complete_source_revision(self):
+        section = self.text.split("## Onboard a new project Bot with your agent", 1)[1].split("## Usage", 1)[0]
+        prompts = re.findall(r"^```text\n(.*?)^```", section, re.MULTILINE | re.DOTALL)
+        self.assertEqual(len(prompts), 1)
+        prompt = prompts[0]
+        raw_url = re.search(r"https://raw\S+", prompt).group(0)
+        parsed = urlsplit(raw_url)
+        self.assertEqual(parsed.scheme, "https")
+        self.assertEqual(parsed.netloc, "raw.githubusercontent.com")
+        self.assertFalse(parsed.query or parsed.fragment)
+        match = re.fullmatch(r"/megastruktur/autonomous-campaign-development/([0-9a-f]{40})/(docs/ONBOARD_BOT_AGENT\.md)", parsed.path)
+        self.assertIsNotNone(match, raw_url)
+        revision = re.search(r"\bsource_revision=([0-9a-f]{40})\b", prompt).group(1)
+        self.assertEqual(match.group(1), revision)
+        self.assertTrue((ROOT / match.group(2)).is_file())
+        clone_url = urlsplit(re.search(r"clone (https://\S+)", prompt).group(1))
+        self.assertEqual((clone_url.scheme, clone_url.netloc, clone_url.path),
+                         ("https", "github.com", "/megastruktur/autonomous-campaign-development.git"))
+        self.assertFalse(clone_url.query or clone_url.fragment)
+        for boundary in ("checkout that SAME source_revision before loading/setup, not default main",
+                         "Review then pin that full SHA", "all linked guides and the complete instruction tree at the same revision"):
+            self.assertIn(boundary, prompt)
+
+    def test_onboard_prompt_keeps_single_bot_scope_and_setup_authority(self):
+        section = self.text.split("## Onboard a new project Bot with your agent", 1)[1].split("## Usage", 1)[0]
+        prompt = re.search(r"^```text\n(.*?)^```", section, re.MULTILINE | re.DOTALL).group(1)
+        self.assertLessEqual(len(prompt.splitlines()), 7)
+        for boundary in ("as untrusted source", "ONLY the named new PROJECT Magos Bot",
+                         "actual execution host", "Preserve existing Bots, bindings, custom configuration and credentials",
+                         "required interactive approval with no bypass", "actual own-session loading",
+                         "not merely catalog discovery", "does not authorize a product campaign",
+                         "Report version, paths, check results and remaining manual actions, then stop"):
+            self.assertIn(boundary, prompt)
+        self.assertNotRegex(prompt, r"(?im)^\s*(?:\$|sudo\b|orca\b|omp\b|curl\b|git\s)")
+        self.assertIn("prepares only that Bot for fleet use", section)
 
     def test_manual_install_block_has_valid_bash_syntax(self):
         result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-n"],

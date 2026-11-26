@@ -807,7 +807,24 @@ class PublicationEntryContractTests(unittest.TestCase):
     def test_readme_diff_is_exactly_two_pin_replacements(self):
         previous = self.blob(REVIEWED_ENTRY_REVISION, ROOT / "README.md")
         self.assertEqual(previous.count(OLD_ENTRY_REVISION), 2)
-        self.assertEqual(self.text, previous.replace(OLD_ENTRY_REVISION, REVIEWED_ENTRY_REVISION))
+        marker = "## Onboard a new project Bot with your agent"
+        added = marker + self.text.split(marker, 1)[1].split("## Usage", 1)[0]
+        expected = previous.replace(OLD_ENTRY_REVISION, REVIEWED_ENTRY_REVISION)
+        expected = expected.replace(
+            "[Agent guide](docs/INSTALL_AGENT.md) · [Public repository]",
+            "[Agent guide](docs/INSTALL_AGENT.md) · [Bot onboarding](docs/ONBOARD_BOT_AGENT.md) ·\n[Public repository]")
+        expected = expected.replace("## Usage", added + "## Usage", 1)
+        self.assertEqual(self.text, expected)
+
+    def test_onboard_section_pins_one_consistent_reviewed_revision(self):
+        marker = "## Onboard a new project Bot with your agent"
+        section = marker + self.text.split(marker, 1)[1].split("## Usage", 1)[0]
+        guide_pins = re.findall(
+            r"https://raw\.githubusercontent\.com/megastruktur/autonomous-campaign-development/"
+            r"([0-9a-f]{40})/docs/ONBOARD_BOT_AGENT\.md(?=\s)", section)
+        source_pins = re.findall(r"\bsource_revision=([0-9a-f]{40})(?=;|\s)", section)
+        self.assertEqual(len(guide_pins), 1)
+        self.assertEqual(guide_pins, source_pins)
 
 
 if __name__ == "__main__":
