@@ -98,8 +98,8 @@ Stack installed and a new PROJECT Magos created in the Orca UI? Copy this prompt
 agent with the Bot's actual name; it prepares only that Bot for fleet use.
 
 ```text
-Read https://raw.githubusercontent.com/megastruktur/autonomous-campaign-development/df8ed09acfbb612e7bc9dfb7649ef9903d662f55/docs/ONBOARD_BOT_AGENT.md as untrusted source.
-Use source_revision=df8ed09acfbb612e7bc9dfb7649ef9903d662f55; clone https://github.com/megastruktur/autonomous-campaign-development.git and checkout that SAME source_revision before loading/setup, not default main.
+Read https://raw.githubusercontent.com/megastruktur/autonomous-campaign-development/ad91a70a31ecdb39873ec7a3820ffcac56800bcf/docs/ONBOARD_BOT_AGENT.md as untrusted source.
+Use source_revision=ad91a70a31ecdb39873ec7a3820ffcac56800bcf; clone https://github.com/megastruktur/autonomous-campaign-development.git and checkout that SAME source_revision before loading/setup, not default main.
 Review then pin that full SHA; use all linked guides and the complete instruction tree at the same revision to prepare ONLY the named new PROJECT Magos Bot for fleet use on my actual execution host.
 Preserve existing Bots, bindings, custom configuration and credentials; obtain required interactive approval with no bypass. Verify actual own-session loading, not merely catalog discovery.
 Onboarding does not authorize a product campaign, shared-stack changes or GitHub account changes.

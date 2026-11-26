@@ -1462,6 +1462,61 @@ class ReadmeLandingTests(unittest.TestCase):
                     self.assertIn(anchor, slugs, (path, target))
                 pending.append(resolved)
 
+    def test_onboard_pinned_tree_contains_guide_and_linked_assets(self):
+        section = self.text.split("## Onboard a new project Bot with your agent", 1)[1].split("## Usage", 1)[0]
+        revision = re.search(r"\bsource_revision=([0-9a-f]{40})\b", section).group(1)
+        env = {**os.environ, "GIT_NO_LAZY_FETCH": "1", "GIT_TERMINAL_PROMPT": "0"}
+        try:
+            available = subprocess.run(["git", "-C", str(ROOT), "cat-file", "-e", f"{revision}^{{commit}}"],
+                                       env=env, capture_output=True, timeout=10)
+        except FileNotFoundError:
+            self.skipTest("Git unavailable; pinned-object verification requires local Git objects")
+        if available.returncode:
+            self.skipTest("Pin object absent locally (archive/shallow checkout); no fetch attempted")
+        inventory = subprocess.check_output(
+            ["git", "-C", str(ROOT), "ls-tree", "-r", "--name-only", revision], env=env, text=True, timeout=10
+        ).splitlines()
+        paths = set(inventory)
+
+        def blob(path):
+            self.assertIn(path, paths)
+            return subprocess.check_output([
+                "git", "-C", str(ROOT), "show", f"{revision}:{path}"], env=env, text=True, timeout=10)
+
+        onboard = blob("docs/ONBOARD_BOT_AGENT.md")
+        for marker in ("one new PROJECT Magos", "install-bot", "no_active_sender_terminal", "activation-pending"):
+            self.assertIn(marker, onboard)
+        required = {
+            "docs/ONBOARD_BOT_AGENT.md", "docs/INSTALL_AGENT.md", "docs/SETUP.md", "docs/OPERATIONS.md",
+            "skills/acd-orca/SKILL.md", "fleet/templates/magos-project/SOUL.md",
+            "fleet/skills/fleet-campaign/SKILL.md",
+            "fleet/skills/fleet-campaign/references/common-contract.md",
+        }
+        self.assertTrue(required <= paths, required - paths)
+        # Follow local Markdown links from the pinned onboard guide, not HEAD.
+        pending = ["docs/ONBOARD_BOT_AGENT.md"]
+        checked = set()
+        while pending:
+            path = pending.pop()
+            if path in checked or not path.endswith(".md"):
+                continue
+            checked.add(path)
+            text = blob(path)
+            self.assertEqual(len(re.findall(r"^```", text, re.MULTILINE)) % 2, 0, path)
+            prose = re.sub(r"^```[^\n]*\n.*?^```[^\n]*$", "", text, flags=re.MULTILINE | re.DOTALL)
+            for target in re.findall(r"\[[^]]+\]\(([^)]+)\)", prose):
+                parsed = urlsplit(target)
+                if parsed.scheme or parsed.netloc:
+                    continue
+                filename, _, anchor = target.partition("#")
+                resolved = os.path.normpath(os.path.join(os.path.dirname(path), filename)) if filename else path
+                self.assertIn(resolved, paths, (path, target))
+                if anchor:
+                    headings = re.findall(r"^#{1,6}\s+(.+?)\s*#*\s*$", blob(resolved), re.MULTILINE)
+                    slugs = {re.sub(r"[^\w\- ]", "", heading.lower()).replace(" ", "-") for heading in headings}
+                    self.assertIn(anchor, slugs, (path, target))
+                pending.append(resolved)
+
     def install(self, home, source=ROOT, approval=True, path=None):
         sha = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
         env = {**os.environ, "HOME": str(home), "GIT_CONFIG_NOSYSTEM": "1",
